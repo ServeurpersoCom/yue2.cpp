@@ -250,11 +250,15 @@ static struct ggml_tensor * nar_build_attn(struct ggml_context * ctx,
     k = ggml_permute(ctx, k, 0, 2, 1, 3);  // [D, S, Nkv]
     v = ggml_permute(ctx, v, 0, 2, 1, 3);
 
+    k = ggml_cont(ctx, k);
+    v = ggml_cont(ctx, v);
+
+    // Clamp V before the F16 cast: the clamp kernels walk contiguous memory
     if (clamp_fp16) {
         v = ggml_clamp(ctx, v, -65504.0f, 65504.0f);
     }
-    k = ggml_cast(ctx, ggml_cont(ctx, k), GGML_TYPE_F16);
-    v = ggml_cast(ctx, ggml_cont(ctx, v), GGML_TYPE_F16);
+    k = ggml_cast(ctx, k, GGML_TYPE_F16);
+    v = ggml_cast(ctx, v, GGML_TYPE_F16);
 
     // AR prefix rows, in the f16 layout of the cache
     size_t               nb1  = (size_t) D * ggml_type_size(GGML_TYPE_F16);

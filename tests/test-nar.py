@@ -3,6 +3,8 @@
 
 Owns both sides: drives CachedNAR of the released implementation on a seeded
 state, runs the GGML harness on the same prefix and the same state, compares.
+The FP16 clamp flag is specified neutral, so every case runs again clamped
+against the same reference.
 The released package is expected as a sibling clone at ../../YuE.
 Run from the tests/ directory.
 
@@ -67,11 +69,11 @@ def main():
             result = engine.solve(arg) if mode == "solve" else engine.velocity(state, arg)
         ref = result.float().numpy().astype("float32").ravel()
 
-        subprocess.run([BIN, GGUF, TMP + "/nar_ids.bin", TMP + "/nar_xt.bin", str(t_lat), mode, str(arg),
-                        TMP + "/nar.bin"], check=True)
-
-        got = np.fromfile(TMP + "/nar.bin", dtype="float32")
-        ok = report(label, ref, got, MAX_REL) and ok
+        for suffix, flags in (("", []), ("-clamp", ["--clamp-fp16"])):
+            subprocess.run([BIN, GGUF, TMP + "/nar_ids.bin", TMP + "/nar_xt.bin", str(t_lat), mode, str(arg),
+                            TMP + "/nar.bin"] + flags, check=True)
+            got = np.fromfile(TMP + "/nar.bin", dtype="float32")
+            ok = report(label + suffix, ref, got, MAX_REL) and ok
 
     sys.exit(0 if ok else 1)
 

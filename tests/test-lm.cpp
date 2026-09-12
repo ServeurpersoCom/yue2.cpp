@@ -2,22 +2,25 @@
 //
 // Prefills a fixed token id sequence, then runs one decode step, dumping
 // the logits and the last hidden state of both forwards for comparison
-// against the torch reference.
+// against the torch reference. The FP16 clamp flag runs the same path clamped.
 
 #include "qwen3-lm.h"
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 int main(int argc, char ** argv) {
-    if (argc < 4) {
-        fprintf(stderr, "usage: %s lm.gguf out_prefix id0 [id1 ...]\n", argv[0]);
+    bool clamp = argc > 3 && strcmp(argv[3], "--clamp-fp16") == 0;
+    int  first = clamp ? 4 : 3;
+    if (argc <= first) {
+        fprintf(stderr, "usage: %s lm.gguf out_prefix [--clamp-fp16] id0 [id1 ...]\n", argv[0]);
         return 1;
     }
 
     std::vector<int> ids;
-    for (int i = 3; i < argc; i++) {
+    for (int i = first; i < argc; i++) {
         ids.push_back(atoi(argv[i]));
     }
 
@@ -25,6 +28,7 @@ int main(int argc, char ** argv) {
     if (!qw3lm_load(&lm, argv[1], 0, 1)) {
         return 1;
     }
+    lm.clamp_fp16 = clamp;
 
     int                V = lm.cfg.vocab_size;
     int                H = lm.cfg.hidden_size;

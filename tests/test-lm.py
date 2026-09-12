@@ -3,7 +3,9 @@
 
 Owns both sides: drives the trunk of the checkpoint modeling code directly so
 the run stays on the AR weight set, runs the GGML harness on the same prompt,
-compares the last token logits and the argmax.
+compares the last token logits and the argmax. The FP16 clamp flag is
+specified neutral, so the same cases run again clamped against the same
+reference.
 Run from the tests/ directory.
 
 Usage:
@@ -59,12 +61,12 @@ def main():
         # The harness prefills every id but the last, then decodes that one
         ref = {"lm-prefill": logits_of(IDS[:-1]), "lm-decode": logits_of(IDS)}
 
-    subprocess.run([BIN, GGUF, TMP + "/lm"] + [str(i) for i in IDS], check=True)
-
     ok = True
-    for label, path in (("lm-prefill", "/lm_prefill_logits.bin"), ("lm-decode", "/lm_decode_logits.bin")):
-        got = np.fromfile(TMP + path, dtype="float32")
-        ok = report(label, ref[label], got, MAX_REL) and ok
+    for suffix, flags in (("", []), ("-clamp", ["--clamp-fp16"])):
+        subprocess.run([BIN, GGUF, TMP + "/lm"] + flags + [str(i) for i in IDS], check=True)
+        for label, path in (("lm-prefill", "/lm_prefill_logits.bin"), ("lm-decode", "/lm_decode_logits.bin")):
+            got = np.fromfile(TMP + path, dtype="float32")
+            ok = report(label + suffix, ref[label], got, MAX_REL) and ok
 
     sys.exit(0 if ok else 1)
 

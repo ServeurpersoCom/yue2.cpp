@@ -3,7 +3,7 @@
 // Prefills the AR prefix into KV set 0, then either evaluates the flow
 // matching field once at a given raw timestep, or solves the whole ODE from
 // the dumped state. Writes raw f32 [T_lat, latent_dim] for comparison against
-// the torch reference.
+// the torch reference. The FP16 clamp flag runs both halves clamped.
 
 #include "nar.h"
 
@@ -23,9 +23,11 @@ static bool read_all(const char * path, void * dst, size_t bytes) {
 }
 
 int main(int argc, char ** argv) {
-    if (argc != 8) {
-        fprintf(stderr, "usage: %s backbone.gguf ar_ids.bin x_t.bin T_lat velocity raw_t out.bin\n", argv[0]);
-        fprintf(stderr, "       %s backbone.gguf ar_ids.bin x_t.bin T_lat solve steps out.bin\n", argv[0]);
+    if (argc != 8 && !(argc == 9 && strcmp(argv[8], "--clamp-fp16") == 0)) {
+        fprintf(stderr, "usage: %s backbone.gguf ar_ids.bin x_t.bin T_lat velocity raw_t out.bin [--clamp-fp16]\n",
+                argv[0]);
+        fprintf(stderr, "       %s backbone.gguf ar_ids.bin x_t.bin T_lat solve steps out.bin [--clamp-fp16]\n",
+                argv[0]);
         return 1;
     }
 
@@ -35,6 +37,7 @@ int main(int argc, char ** argv) {
     int          T_lat     = atoi(argv[4]);
     const char * mode      = argv[5];
     const char * out_path  = argv[7];
+    bool         clamp     = argc == 9;
 
     bool solve = strcmp(mode, "solve") == 0;
     if (!solve && strcmp(mode, "velocity") != 0) {
@@ -71,6 +74,7 @@ int main(int argc, char ** argv) {
     if (!qw3lm_load(&lm, gguf_path, 0, 1)) {
         return 1;
     }
+    lm.clamp_fp16 = clamp;
 
     Yue2NAR nar = {};
     if (!nar_load(&nar, &lm, gguf_path)) {
