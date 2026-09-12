@@ -101,7 +101,10 @@ static bool yue2_generate(Qwen3LM *                lm,
             memcpy(cond.data(), batched.data(), (size_t) V * sizeof(float));
             memcpy(uncond.data(), batched.data() + V, (size_t) V * sizeof(float));
         } else {
-            qw3lm_forward(lm, &token, 1, 0, cond.data());
+            // The batched forward keeps a persistent StaticGraph across steps;
+            // the plain forward would rebuild and realloc the graph every token
+            int kv_set = 0;
+            qw3lm_forward_batch(lm, &token, &kv_set, 1, cond.data());
         }
     }
     return true;

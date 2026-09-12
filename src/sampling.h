@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <unordered_map>
 #include <vector>
 
 // Which AR stage the logits come from
@@ -64,26 +65,29 @@ static void yue2_phase_range(Yue2Phase phase, int * lo, int * hi, int * end) {
     *end = YUE2_MUSIC_END;
 }
 
-// Frequency of one id in the penalty window
-static int yue2_window_count(const std::vector<int> & history, int window, int id) {
-    size_t first = history.size() > (size_t) window ? history.size() - (size_t) window : 0;
-    int    count = 0;
-    for (size_t i = first; i < history.size(); i++) {
-        if (history[i] == id) {
-            count++;
-        }
+// Frequency of every id in the penalty window, computed once per step. The
+// counts are identical to scanning the window per candidate, O(V * window)
+// becomes O(V + window).
+static void yue2_window_freq(const std::vector<int> & history, int window, std::unordered_map<int, int> & freq) {
+    freq.clear();
+    if (window <= 0) {
+        return;
     }
-    return count;
+    size_t first = history.size() > (size_t) window ? history.size() - (size_t) window : 0;
+    for (size_t i = first; i < history.size(); i++) {
+        freq[history[i]]++;
+    }
 }
 
 // Score of one candidate: the window penalty scales negatives and divides
-// positives, then temperature rescales.
-static float yue2_score(float logit, const std::vector<int> & history, const Yue2Sampling & s, int id) {
+// positives, then temperature rescales. `freq` is the precomputed window
+// frequency table for the current step.
+static float yue2_score(float logit, const std::unordered_map<int, int> & freq, const Yue2Sampling & s, int id) {
     float score = logit;
     if (s.repetition_penalty != 1.0f) {
-        int freq = yue2_window_count(history, s.penalty_window, id);
-        if (freq > 0) {
-            float alpha = powf(s.repetition_penalty, (float) freq);
+        auto it = freq.find(id);
+        if (it != freq.end() && it->second > 0) {
+            float alpha = powf(s.repetition_penalty, (float) it->second);
             score       = score < 0.0f ? score * alpha : score / alpha;
         }
     }
@@ -104,13 +108,18 @@ static void yue2_distribution(const float *                logits,
     int lo, hi, end;
     yue2_phase_range(phase, &lo, &hi, &end);
 
+    std::unordered_map<int, int> freq;
+    if (s.repetition_penalty != 1.0f) {
+        yue2_window_freq(history, s.penalty_window, freq);
+    }
+
     out.clear();
     out.reserve((size_t) (hi - lo) + 1);
     for (int id = lo; id < hi; id++) {
-        out.push_back({ id, yue2_score(logits[id], history, s, id) });
+        out.push_back({ id, yue2_score(logits[id], freq, s, id) });
     }
     if (step >= s.min_tokens) {
-        out.push_back({ end, yue2_score(logits[end], history, s, end) });
+        out.push_back({ end, yue2_score(logits[end], freq, s, end) });
     }
 
     if (s.temperature == 0.0f) {
