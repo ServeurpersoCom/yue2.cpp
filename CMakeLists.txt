@@ -100,10 +100,6 @@ macro(link_ggml_backends target)
     add_dependencies(${target} version)
 endmacro()
 
-# yue-plan: symbolic planning stage (style and lyrics -> ABC score)
-add_executable(yue-plan tools/yue-plan.cpp)
-link_ggml_backends(yue-plan)
-
 # yyjson (MIT, fast JSON parser/writer)
 add_library(yyjson STATIC vendor/yyjson/yyjson.c)
 target_include_directories(yyjson PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/vendor/yyjson)
@@ -112,6 +108,11 @@ if(MSVC)
 else()
     target_compile_options(yyjson PRIVATE -w)
 endif()
+
+# yue-plan: symbolic planning stage (request -> ABC score)
+add_executable(yue-plan tools/yue-plan.cpp src/request.cpp)
+target_link_libraries(yue-plan PRIVATE yyjson)
+link_ggml_backends(yue-plan)
 
 # yue-synth: full pipeline (score -> semantic -> flow matching -> VAE -> audio)
 add_executable(yue-synth tools/yue-synth.cpp src/request.cpp)

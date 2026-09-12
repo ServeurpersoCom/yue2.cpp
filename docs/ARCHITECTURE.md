@@ -467,17 +467,15 @@ Runs the first autoregressive stage alone and writes the composition the
 model intends to play.
 
 ```
-Usage: ./yue-plan --model <gguf> --style <file> --lyrics <file> [options]
+Usage: ./yue-plan --model <gguf> --request <json> [options]
 
 Required:
   --model <gguf>         Backbone GGUF
-  --style <file>         Style tags text file
-  --lyrics <file>        Lyrics text file
+  --request <json>       Input request JSON
 
 Optional:
   --out <path>           Output score (default: score.abc)
-  --cot <mode>           full or melody (default: full)
-  --seed <N>             Sampling seed (default: 831001)
+  --lm-seed <N>          Token sampling seed (default: random)
 
 Debug:
   --max-seq <N>          KV cache size (default: model context)
@@ -494,7 +492,6 @@ Full pipeline, style and lyrics to stereo audio.
 
 ```
 Usage: ./yue-synth --model <gguf> --vae <gguf> --request <json> [options]
-       ./yue-synth --model <gguf> --vae <gguf> --style <file> --lyrics <file> [options]
 
 Required:
   --model <gguf>         Backbone GGUF
@@ -502,31 +499,27 @@ Required:
   --request <json>       Input request JSON
 
 Optional:
-  --style <file>         Style tags (instead of --request)
-  --lyrics <file>        Lyrics (instead of --request)
-  --abc <file>           Score to realize instead of planning one
   --out <path>           Output audio (default: song.mp3)
+  --duration <s>         Target length in seconds
+  --lm-seed <N>          Token sampling seed
+  --seed <N>             Acoustic noise seed
+  --steps <N>            Flow matching steps
+
+Debug:
   --score <path>         Also write the planned score
   --tokens <path>        Also write the semantic stream (CSV)
   --latent <path>        Also write the acoustic latents (.vae)
-  --cot <mode>           full, melody or off (default: full)
-  --duration <s>         Target length in seconds (default: 360)
-  --lm-seed <N>          Token sampling seed (default: random)
-  --seed <N>             Acoustic noise seed (default: random)
-  --steps <N>            Flow matching steps (default: 32)
-  --cfg-scale <f>        Guidance on the semantic stage (default: protocol)
-  --format <fmt>         mp3, wav16, wav24 or wav32 (default: mp3)
-  --peak-clip <N>        Normalization percentile control (default: 10)
-  --bitrate <kbps>       MP3 bitrate (default: 128)
+  --max-seq <N>          KV cache size (default: model context)
+  --vae-core <N>         VAE tile core frames (default: 1024)
+  --vae-halo <N>         VAE tile halo frames (default: 16)
+  --no-fa                Disable flash attention
+  --clamp-fp16           Clamp hidden states to FP16 range
 ```
 
-The debug section adds `--max-seq`, the semantic sampling overrides
-(`--max-tokens`, `--temp`, `--top-p`, `--top-k`, `--rep-penalty`,
-`--penalty-window`, `--min-tokens`), the VAE tiling (`--vae-core`,
-`--vae-halo`), `--no-fa` and `--clamp-fp16`.
-
-A `--request` is parsed before the flag pass, so individual flags override
-the fields of the JSON.
+The content of a song lives in the request and nowhere else: style, lyrics,
+score, codes, sampling presets. The flags above only carry what a scripted
+sweep varies between two runs, and each of them overrides the field of the
+same name.
 
 ## yue-server reference
 
@@ -679,10 +672,18 @@ writes WAV or MP3 (auto-detected from the output extension).
 ```
 Usage: ./mp3-codec -i <input> -o <output> [options]
 
-  -i <path>       Input file (WAV or MP3)
-  -o <path>       Output file (WAV or MP3)
-  -b <kbps>       Bitrate for MP3 encoding (default: 128)
+  -i <path>     Input file (WAV or MP3)
+  -o <path>     Output file (WAV or MP3)
+  -b <kbps>     Bitrate for MP3 encoding (default: 128)
   --format <fmt>  WAV format: wav16, wav24, wav32 (default: wav16)
+
+Mode is auto-detected from output extension.
+
+Examples:
+  ./mp3-codec -i song.wav -o song.mp3
+  ./mp3-codec -i song.wav -o song.mp3 -b 192
+  ./mp3-codec -i song.mp3 -o song.wav
+  ./mp3-codec -i song.mp3 -o song.wav --format wav32
 ```
 
 ## Accuracy

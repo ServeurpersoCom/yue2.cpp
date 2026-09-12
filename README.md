@@ -141,22 +141,15 @@ and Yue2Request JSON specification.
 <details>
 <summary>CLI tools (advanced)</summary>
 
-For scripting without the server, `yue-synth` runs the full pipeline.
+For scripting without the server, `yue-synth` runs the full pipeline from a
+request JSON, the same schema the server and the WebUI speak.
 
 ```bash
-# quick one-shot
 ./build/yue-synth \
     --model models/YuE2-3B-Q8_0.gguf \
     --vae models/YuE2-Vae-F32.gguf \
-    --style style.txt \
-    --lyrics lyrics.txt \
+    --request request.json \
     --out song.mp3
-
-# same request schema as the server
-./build/yue-synth \
-    --model models/YuE2-3B-Q8_0.gguf \
-    --vae models/YuE2-Vae-F32.gguf \
-    --request request.json
 ```
 
 Feeding back a request that carries `semantic_tokens` skips the
@@ -165,14 +158,12 @@ forward and the song re-renders deterministically, so the flow matching
 steps, the seed or the output format can be iterated for a fraction of
 the cost.
 
-The `yue-plan` tool runs the first autoregressive stage alone and writes
-the ABC score the model intends to play. The score is the white box
-interface: read it, edit it, hand it back with `--abc`.
+The `yue-plan` tool runs the first autoregressive stage alone and writes the
+ABC score the model intends to play. The score is the white box interface:
+read it, edit it, put it back in the request as `abc`.
 
 ```bash
-./build/yue-plan --model models/YuE2-3B-Q8_0.gguf --style style.txt --lyrics lyrics.txt --out score.abc
-./build/yue-synth --model models/YuE2-3B-Q8_0.gguf --vae models/YuE2-Vae-F32.gguf \
-    --style style.txt --lyrics lyrics.txt --abc score.abc --out song.mp3
+./build/yue-plan --model models/YuE2-3B-Q8_0.gguf --request request.json --out score.abc
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full JSON

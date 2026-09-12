@@ -1,12 +1,13 @@
-// yue-plan.cpp: symbolic planning CLI, style and lyrics to an ABC score
+// yue-plan.cpp: symbolic planning CLI, a request to an ABC score
 //
 // Runs the first autoregressive stage alone and writes the composition the
 // model intends to play. The score is the white box interface: read it, edit
-// it, and hand it back to the synthesis stage.
+// it, and hand it back to the synthesis stage through the same request.
 
 #include "bpe.h"
 #include "generate.h"
 #include "prompt.h"
+#include "request.h"
 #include "version.h"
 
 #include <cstdio>
@@ -18,17 +19,15 @@
 static void print_usage(const char * prog) {
     fprintf(stderr, "yue2.cpp %s\n\n", YUE2_VERSION);
     fprintf(stderr,
-            "Usage: %s --model <gguf> --style <file> --lyrics <file> [options]\n"
+            "Usage: %s --model <gguf> --request <json> [options]\n"
             "\n"
             "Required:\n"
             "  --model <gguf>         Backbone GGUF\n"
-            "  --style <file>         Style tags text file\n"
-            "  --lyrics <file>        Lyrics text file\n"
+            "  --request <json>       Input request JSON\n"
             "\n"
             "Optional:\n"
             "  --out <path>           Output score (default: score.abc)\n"
-            "  --cot <mode>           full or melody (default: full)\n"
-            "  --seed <N>             Sampling seed (default: 831001)\n"
+            "  --lm-seed <N>          Token sampling seed (default: random)\n"
             "\n"
             "Debug:\n"
             "  --max-seq <N>          KV cache size (default: model context)\n"
@@ -36,25 +35,6 @@ static void print_usage(const char * prog) {
             "  --no-fa                Disable flash attention\n"
             "  --clamp-fp16           Clamp hidden states to FP16 range\n",
             prog);
-}
-
-static bool read_file(const char * path, std::string * out) {
-    FILE * f = fopen(path, "rb");
-    if (!f) {
-        fprintf(stderr, "[Plan] FATAL: cannot read %s\n", path);
-        return false;
-    }
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    out->resize(size > 0 ? (size_t) size : 0);
-    size_t got = out->empty() ? 0 : fread(&(*out)[0], 1, out->size(), f);
-    fclose(f);
-    if (got != out->size()) {
-        fprintf(stderr, "[Plan] FATAL: cannot read %s\n", path);
-        return false;
-    }
-    return true;
 }
 
 static bool write_file(const char * path, const std::string & data) {
@@ -73,37 +53,31 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    const char * model_path  = nullptr;
-    const char * style_path  = nullptr;
-    const char * lyrics_path = nullptr;
-    const char * out_path    = "score.abc";
-    const char * dump_path   = nullptr;
-    Yue2Cot      cot         = YUE2_COT_FULL;
-    int64_t      seed        = 831001;
-    int          max_seq     = 0;
-    bool         no_fa       = false;
-    bool         clamp_fp16  = false;
+    const char * model_path = nullptr;
+    const char * out_path   = "score.abc";
+    const char * dump_path  = nullptr;
+    int          max_seq    = 0;
+    bool         no_fa      = false;
+    bool         clamp_fp16 = false;
+
+    Yue2Request r;
+    request_init(&r);
+    for (int i = 1; i + 1 < argc; i++) {
+        if (!strcmp(argv[i], "--request") && !request_parse(&r, argv[i + 1])) {
+            return 1;
+        }
+    }
 
     for (int i = 1; i < argc; i++) {
         bool last = i + 1 >= argc;
         if (!strcmp(argv[i], "--model") && !last) {
             model_path = argv[++i];
-        } else if (!strcmp(argv[i], "--style") && !last) {
-            style_path = argv[++i];
-        } else if (!strcmp(argv[i], "--lyrics") && !last) {
-            lyrics_path = argv[++i];
+        } else if (!strcmp(argv[i], "--request") && !last) {
+            i++;  // parsed before the flag pass so the flags override it
         } else if (!strcmp(argv[i], "--out") && !last) {
             out_path = argv[++i];
-        } else if (!strcmp(argv[i], "--cot") && !last) {
-            const char * mode = argv[++i];
-            if (!strcmp(mode, "melody")) {
-                cot = YUE2_COT_MELODY;
-            } else if (strcmp(mode, "full") != 0) {
-                fprintf(stderr, "[Plan] FATAL: --cot must be full or melody\n");
-                return 1;
-            }
-        } else if (!strcmp(argv[i], "--seed") && !last) {
-            seed = atoll(argv[++i]);
+        } else if (!strcmp(argv[i], "--lm-seed") && !last) {
+            r.lm_seed = atoll(argv[++i]);
         } else if (!strcmp(argv[i], "--max-seq") && !last) {
             max_seq = atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--dump-tokens") && !last) {
@@ -126,16 +100,25 @@ int main(int argc, char ** argv) {
         print_usage(argv[0]);
         return 1;
     }
-    if (!style_path || !lyrics_path) {
-        fprintf(stderr, "[Plan] ERROR: --style and --lyrics are required\n\n");
+    if (r.style.empty() && r.lyrics.empty()) {
+        fprintf(stderr, "[Plan] ERROR: the request carries neither style nor lyrics\n\n");
         print_usage(argv[0]);
         return 1;
     }
 
-    std::string style, lyrics;
-    if (!read_file(style_path, &style) || !read_file(lyrics_path, &lyrics)) {
+    Yue2Cot cot;
+    if (r.cot == "full") {
+        cot = YUE2_COT_FULL;
+    } else if (r.cot == "melody") {
+        cot = YUE2_COT_MELODY;
+    } else {
+        fprintf(stderr, "[Plan] FATAL: cot must be full or melody to write a score\n");
         return 1;
     }
+    if (!yue2_sampling_valid(r.abc_sampling, "abc")) {
+        return 1;
+    }
+    request_resolve_seed(&r);
 
     BPETokenizer tok;
     if (!load_bpe_from_gguf(&tok, model_path)) {
@@ -151,7 +134,7 @@ int main(int argc, char ** argv) {
 
     // The score slot stays open: this stage is the one that fills it
     std::vector<int> prefix = yue2_build_prompt_ids([&tok](const std::string & text) { return bpe_encode(&tok, text); },
-                                                    cot, style, lyrics, nullptr);
+                                                    cot, r.style, r.lyrics, nullptr);
 
     if (dump_path) {
         std::string csv;
@@ -165,7 +148,7 @@ int main(int argc, char ** argv) {
     }
 
     Yue2Generation plan;
-    if (!yue2_generate(&lm, prefix, {}, 1.0f, YUE2_ABC_SAMPLING, seed, YUE2_PHASE_ABC, &plan)) {
+    if (!yue2_generate(&lm, prefix, {}, 1.0f, r.abc_sampling, r.lm_seed, YUE2_PHASE_ABC, &plan)) {
         qw3lm_free(&lm);
         return 1;
     }
@@ -177,7 +160,7 @@ int main(int argc, char ** argv) {
     }
 
     qw3lm_free(&lm);
-    fprintf(stderr, "[Plan] Prefix %zu tokens, score %zu tokens%s -> %s\n", prefix.size(), plan.tokens.size(),
-            plan.truncated ? " (truncated)" : "", out_path);
+    fprintf(stderr, "[Plan] Prefix %zu tokens, score %zu tokens%s, seed %lld -> %s\n", prefix.size(),
+            plan.tokens.size(), plan.truncated ? " (truncated)" : "", (long long) r.lm_seed, out_path);
     return 0;
 }
