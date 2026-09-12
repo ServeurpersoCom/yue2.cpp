@@ -257,7 +257,8 @@ static bool pipeline_generate(Yue2Pipeline *      p,
         // token completes it. Anything else prefills the chunk sequence.
         if (!replay && start == 0 && frames == song->T_lat) {
             int end = YUE2_MUSIC_END;
-            qw3lm_forward(&p->lm, &end, 1, 0, probe.data());
+            int set = 0;
+            qw3lm_forward_batch(&p->lm, &end, &set, 1, probe.data());
         } else {
             std::vector<int> sequence = prefix;
             sequence.insert(sequence.end(), codes.tokens.begin() + start, codes.tokens.begin() + start + frames);

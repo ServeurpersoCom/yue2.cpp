@@ -11,7 +11,6 @@
 #include "timer.h"
 
 #include <cstdio>
-#include <cstring>
 #include <vector>
 
 struct Yue2Generation {
@@ -21,8 +20,8 @@ struct Yue2Generation {
 
 // Guidance of exactly one keeps a single branch, which is the nominal path in
 // melody and full mode. Anything else prefills the unconditional prefix into
-// KV set 1 and decodes both branches in one batched forward, the conditional
-// and unconditional logits combining before the distribution.
+// KV set 1 and decodes both branches in the same batched forward, the
+// conditional and unconditional logits combining before the distribution.
 static bool yue2_generate(Qwen3LM *                lm,
                           const std::vector<int> & prefix,
                           const std::vector<int> & negative,
@@ -57,18 +56,20 @@ static bool yue2_generate(Qwen3LM *                lm,
     const char * label = phase == YUE2_PHASE_ABC ? "Score" : "Semantic";
     Timer        timer;
 
+    // Logits in KV set order, [cond, uncond], the prefills and the decode
+    // steps writing the same rows
+    int                N          = guided ? 2 : 1;
+    int                kv_sets[2] = { 0, 1 };
+    std::vector<float> batched((size_t) N * V);
+    float *            cond   = batched.data();
+    float *            uncond = batched.data() + V;
+
     Timer prefill_timer;
     qw3lm_reset_kv(lm, 0);
-    std::vector<float> cond((size_t) V);
-    qw3lm_forward(lm, prefix.data(), (int) prefix.size(), 0, cond.data());
-
-    std::vector<float> uncond;
-    std::vector<float> batched;
+    qw3lm_forward(lm, prefix.data(), (int) prefix.size(), 0, cond);
     if (guided) {
         qw3lm_reset_kv(lm, 1);
-        uncond.resize((size_t) V);
-        batched.resize((size_t) 2 * V);
-        qw3lm_forward(lm, negative.data(), (int) negative.size(), 1, uncond.data());
+        qw3lm_forward(lm, negative.data(), (int) negative.size(), 1, uncond);
     }
     fprintf(stderr, "[AR] %s prefill: %.0f ms, %zu tokens, CFG=%.2f, top_k=%d, budget=%d\n", label, prefill_timer.ms(),
             prefix.size(), (double) cfg_scale, s.top_k, s.max_tokens);
@@ -83,10 +84,10 @@ static bool yue2_generate(Qwen3LM *                lm,
             fprintf(stderr, "[AR] Cancelled at step %d\n", step);
             return false;
         }
-        const float * logits = cond.data();
+        const float * logits = cond;
         if (guided) {
             for (int i = 0; i < V; i++) {
-                mixed[(size_t) i] = uncond[(size_t) i] + cfg_scale * (cond[(size_t) i] - uncond[(size_t) i]);
+                mixed[(size_t) i] = uncond[i] + cfg_scale * (cond[i] - uncond[i]);
             }
             logits = mixed.data();
         }
@@ -104,15 +105,8 @@ static bool yue2_generate(Qwen3LM *                lm,
         if (step + 1 >= s.max_tokens) {
             continue;
         }
-        if (guided) {
-            int tokens[2]  = { token, token };
-            int kv_sets[2] = { 0, 1 };
-            qw3lm_forward_batch(lm, tokens, kv_sets, 2, batched.data());
-            memcpy(cond.data(), batched.data(), (size_t) V * sizeof(float));
-            memcpy(uncond.data(), batched.data() + V, (size_t) V * sizeof(float));
-        } else {
-            qw3lm_forward(lm, &token, 1, 0, cond.data());
-        }
+        int tokens[2] = { token, token };
+        qw3lm_forward_batch(lm, tokens, kv_sets, N, batched.data());
     }
 
     int n = (int) out->tokens.size();

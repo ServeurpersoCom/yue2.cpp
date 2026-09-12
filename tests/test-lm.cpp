@@ -1,8 +1,8 @@
 // test-lm.cpp: backbone AR path parity harness
 //
-// Prefills a fixed token id sequence, then runs one decode step, dumping
-// the logits and the last hidden state of both forwards for comparison
-// against the torch reference. The FP16 clamp flag runs the same path clamped.
+// Prefills a fixed token id sequence, then runs one decode step, dumping the
+// logits of both forwards for comparison against the torch reference. The
+// FP16 clamp flag runs the same path clamped.
 
 #include "qwen3-lm.h"
 
@@ -31,29 +31,23 @@ int main(int argc, char ** argv) {
     lm.clamp_fp16 = clamp;
 
     int                V = lm.cfg.vocab_size;
-    int                H = lm.cfg.hidden_size;
-    std::vector<float> logits(V), hidden(H);
+    std::vector<float> logits(V);
 
     // Prefill all ids but the last, then decode the last id alone
-    qw3lm_forward(&lm, ids.data(), (int) ids.size() - 1, 0, logits.data(), hidden.data());
-    std::string p = std::string(argv[2]) + "_prefill";
-    FILE *      f = fopen((p + "_logits.bin").c_str(), "wb");
+    qw3lm_forward(&lm, ids.data(), (int) ids.size() - 1, 0, logits.data());
+    std::string p = std::string(argv[2]) + "_prefill_logits.bin";
+    FILE *      f = fopen(p.c_str(), "wb");
     fwrite(logits.data(), sizeof(float), V, f);
-    fclose(f);
-    f = fopen((p + "_hidden.bin").c_str(), "wb");
-    fwrite(hidden.data(), sizeof(float), H, f);
     fclose(f);
 
     int last = ids.back();
-    qw3lm_forward(&lm, &last, 1, 0, logits.data(), hidden.data());
-    p = std::string(argv[2]) + "_decode";
-    f = fopen((p + "_logits.bin").c_str(), "wb");
+    int set  = 0;
+    qw3lm_forward_batch(&lm, &last, &set, 1, logits.data());
+    p = std::string(argv[2]) + "_decode_logits.bin";
+    f = fopen(p.c_str(), "wb");
     fwrite(logits.data(), sizeof(float), V, f);
     fclose(f);
-    f = fopen((p + "_hidden.bin").c_str(), "wb");
-    fwrite(hidden.data(), sizeof(float), H, f);
-    fclose(f);
 
-    fprintf(stderr, "[Test-LM] Prefill %d tokens + decode 1, V=%d H=%d\n", (int) ids.size() - 1, V, H);
+    fprintf(stderr, "[Test-LM] Prefill %d tokens + decode 1, V=%d\n", (int) ids.size() - 1, V);
     return 0;
 }

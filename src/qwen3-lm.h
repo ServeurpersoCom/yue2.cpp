@@ -1,6 +1,7 @@
 // qwen3-lm.h : Qwen3 causal LM with KV cache (GGML)
 // Autoregressive score and semantic token generation for YuE2
-// Loads from GGUF, supports prefill + decode, untied lm_head
+// Loads from GGUF, prefills a sequence and decodes through the batched
+// static graph, untied lm_head
 // The AR half of the MoT backbone: the nar_* weight set is read by nar.h
 #pragma once
 
@@ -84,11 +85,8 @@ struct Qwen3LM {
     int                   n_kv_sets;
 
     // Persistent graph arenas, one per graph shape class: stable node
-    // addresses across rebuilds keep the backend CUDA graph cache hot,
-    // so decode steps replay a captured executable instead of paying
-    // one kernel launch per node.
+    // addresses across rebuilds keep the backend graph cache hot.
     GraphArena arena_prefill;
-    GraphArena arena_decode;
     GraphArena arena_batch;
 
     // Static batched decode graph, replayed across the token loop.
@@ -325,7 +323,6 @@ static bool qw3lm_load(Qwen3LM * m, const char * gguf_path, int max_seq_len, int
 
     // Persistent graph arenas
     if (!graph_arena_init(&m->arena_prefill, QW3LM_GRAPH_NODES) ||
-        !graph_arena_init(&m->arena_decode, QW3LM_GRAPH_NODES) ||
         !graph_arena_init(&m->arena_batch, QW3LM_GRAPH_NODES)) {
         return false;
     }
@@ -438,16 +435,10 @@ static struct ggml_tensor * qw3lm_build_attn(struct ggml_context * ctx,
     return qwen3_linear(ctx, ly->o_proj, attn);
 }
 
-// Forward pass: token_ids[n_tokens] -> logits[vocab_size] (last token only)
-// kv_set: which KV cache set to use (0=conditional, 1=unconditional for CFG)
-// out_hidden: when non NULL, receives the last token hidden state [H]
-// after the final norm.
-static void qw3lm_forward(Qwen3LM *   m,
-                          const int * token_ids,
-                          int         n_tokens,
-                          int         kv_set,
-                          float *     logits,
-                          float *     out_hidden = nullptr) {
+// Prefill forward: token_ids[n_tokens] -> logits[vocab_size] of the last token.
+// kv_set: which KV cache set to use (0=conditional, 1=unconditional for CFG).
+// Rebuilds and reallocates its graph, which invalidates the static decode graph.
+static void qw3lm_forward(Qwen3LM * m, const int * token_ids, int n_tokens, int kv_set, float * logits) {
     if (m->batch_graph.graph.sched_allocated) {
         static_graph_release(&m->batch_graph.graph, m->sched);
         m->batch_graph.built = false;
@@ -463,17 +454,13 @@ static void qw3lm_forward(Qwen3LM *   m,
         return;
     }
 
-    // Attention window rounded up to 256 and clamped to the cache size:
-    // fixed shapes over spans of 256 decode steps keep the CUDA graph
-    // executable updatable in place.
+    // Attention window rounded up to 256 and clamped to the cache size, the
+    // window shape the decode graph reads
     const int kv_pad_raw = (int) GGML_PAD(kv_len, 256);
     const int n_kv_pad   = kv_pad_raw < c.max_seq_len ? kv_pad_raw : c.max_seq_len;
 
-    // Persistent arena per shape class: prefill (n_tokens > 1) and
-    // decode (n_tokens == 1) keep separate stable first node addresses.
-    GraphArena *          arena = (n_tokens > 1) ? &m->arena_prefill : &m->arena_decode;
-    struct ggml_context * ctx   = graph_arena_begin(arena);
-    struct ggml_cgraph *  gf    = ggml_new_graph_custom(ctx, QW3LM_GRAPH_NODES, false);
+    struct ggml_context * ctx = graph_arena_begin(&m->arena_prefill);
+    struct ggml_cgraph *  gf  = ggml_new_graph_custom(ctx, QW3LM_GRAPH_NODES, false);
 
     // Inputs
     struct ggml_tensor * positions = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, n_tokens);
@@ -533,14 +520,8 @@ static void qw3lm_forward(Qwen3LM *   m,
         hidden = ggml_view_1d(ctx, hidden, H, (int64_t) (n_tokens - 1) * H * sizeof(float));
     }
 
-    // Last token hidden state after the final norm
-    struct ggml_tensor * hidden_out = ggml_cont(ctx, hidden);
-    ggml_set_name(hidden_out, "last_hidden");
-    ggml_set_output(hidden_out);
-    ggml_build_forward_expand(gf, hidden_out);
-
     // LM head: logits = lm_head^T @ hidden -> [V, 1]
-    struct ggml_tensor * lgt = ggml_mul_mat(ctx, m->lm_head, hidden_out);
+    struct ggml_tensor * lgt = ggml_mul_mat(ctx, m->lm_head, ggml_cont(ctx, hidden));
     ggml_set_name(lgt, "logits");
     ggml_set_output(lgt);
     ggml_build_forward_expand(gf, lgt);
@@ -587,20 +568,19 @@ static void qw3lm_forward(Qwen3LM *   m,
     // Compute
     ggml_backend_sched_graph_compute(m->sched, gf);
 
-    // Read logits [V] and optionally the last hidden state [H]
+    // Read logits [V]
     ggml_backend_tensor_get(lgt, logits, 0, c.vocab_size * sizeof(float));
-    if (out_hidden) {
-        ggml_backend_tensor_get(hidden_out, out_hidden, 0, (size_t) H * sizeof(float));
-    }
 
     // Advance KV position. The arena and the sched allocation persist
     // into the next forward.
     m->kv_pos[kv_set] += n_tokens;
 }
 
-// Batched decode forward: N tokens (1 per sequence), batched weight matmuls.
+// Decode forward: N tokens (1 per sequence), batched weight matmuls, the one
+// decode path of every sequence count including N=1. The static graph replays
+// across the token loop.
 // kv_pos per element from m->kv_pos[kv_sets[i]], supports different prompt lengths.
-// kv_sets[N]: which KV set each token uses.
+// kv_sets[N]: which KV set each token uses, always consecutive from kv_sets[0].
 // logits: [N * vocab_size] output, N logit vectors concatenated.
 static void qw3lm_forward_batch(Qwen3LM * m, const int * token_ids, const int * kv_sets, int N, float * logits) {
     const Qwen3LMConfig & c   = m->cfg;
@@ -852,7 +832,6 @@ static void qw3lm_forward_batch(Qwen3LM * m, const int * token_ids, const int * 
 static void qw3lm_free(Qwen3LM * m) {
     static_graph_release(&m->batch_graph.graph, m->sched);
     graph_arena_free(&m->arena_batch);
-    graph_arena_free(&m->arena_decode);
     graph_arena_free(&m->arena_prefill);
     if (m->sched) {
         ggml_backend_sched_free(m->sched);

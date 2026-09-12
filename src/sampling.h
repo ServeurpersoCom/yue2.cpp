@@ -64,35 +64,6 @@ static void yue2_phase_range(Yue2Phase phase, int * lo, int * hi, int * end) {
     *end = YUE2_MUSIC_END;
 }
 
-// Frequency of one id in the penalty window
-static int yue2_window_count(const std::vector<int> & history, int window, int id) {
-    size_t first = history.size() > (size_t) window ? history.size() - (size_t) window : 0;
-    int    count = 0;
-    for (size_t i = first; i < history.size(); i++) {
-        if (history[i] == id) {
-            count++;
-        }
-    }
-    return count;
-}
-
-// Score of one candidate: the window penalty scales negatives and divides
-// positives, then temperature rescales.
-static float yue2_score(float logit, const std::vector<int> & history, const Yue2Sampling & s, int id) {
-    float score = logit;
-    if (s.repetition_penalty != 1.0f) {
-        int freq = yue2_window_count(history, s.penalty_window, id);
-        if (freq > 0) {
-            float alpha = powf(s.repetition_penalty, (float) freq);
-            score       = score < 0.0f ? score * alpha : score / alpha;
-        }
-    }
-    if (s.temperature != 0.0f && s.temperature != 1.0f) {
-        score /= s.temperature;
-    }
-    return score;
-}
-
 // Candidates that survive the phase mask, the end token floor, top-k and the
 // nucleus, in descending score order. Temperature zero returns the argmax alone.
 static void yue2_distribution(const float *                logits,
@@ -104,13 +75,43 @@ static void yue2_distribution(const float *                logits,
     int lo, hi, end;
     yue2_phase_range(phase, &lo, &hi, &end);
 
+    // The candidate of id sits at index id - lo until the truncations below
     out.clear();
     out.reserve((size_t) (hi - lo) + 1);
     for (int id = lo; id < hi; id++) {
-        out.push_back({ id, yue2_score(logits[id], history, s, id) });
+        out.push_back({ id, logits[id] });
     }
     if (step >= s.min_tokens) {
-        out.push_back({ end, yue2_score(logits[end], history, s, end) });
+        out.push_back({ end, logits[end] });
+    }
+
+    // The ids of the penalty window scale by their frequency in it, negatives
+    // multiplied and positives divided. The history only holds content ids of
+    // the phase, and an id is scored at its first occurrence in the window.
+    if (s.repetition_penalty != 1.0f) {
+        size_t first = history.size() > (size_t) s.penalty_window ? history.size() - (size_t) s.penalty_window : 0;
+        for (size_t i = first; i < history.size(); i++) {
+            int  id   = history[i];
+            bool seen = false;
+            for (size_t j = first; j < i && !seen; j++) {
+                seen = history[j] == id;
+            }
+            if (seen) {
+                continue;
+            }
+            int freq = 0;
+            for (size_t j = i; j < history.size(); j++) {
+                freq += history[j] == id;
+            }
+            float   alpha = powf(s.repetition_penalty, (float) freq);
+            float & score = out[(size_t) (id - lo)].score;
+            score         = score < 0.0f ? score * alpha : score / alpha;
+        }
+    }
+    if (s.temperature != 0.0f && s.temperature != 1.0f) {
+        for (size_t i = 0; i < out.size(); i++) {
+            out[i].score /= s.temperature;
+        }
     }
 
     if (s.temperature == 0.0f) {
