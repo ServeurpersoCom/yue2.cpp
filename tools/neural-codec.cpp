@@ -269,8 +269,7 @@ static void print_usage(const char * prog) {
             "\n"
             "Debug:\n"
             "  --vae-core <N>          Tile core frames (default: 1024)\n"
-            "  --vae-halo <N>          Tile halo frames (default: 16)\n"
-            "  --help                  Show this help\n",
+            "  --vae-halo <N>          Tile halo frames (default: 16)\n",
             prog, prog);
 }
 
@@ -326,7 +325,7 @@ int main(int argc, char ** argv) {
             quant = 8;
         } else if (!strcmp(argv[i], "--q4")) {
             quant = 4;
-        } else if (!strcmp(argv[i], "--help")) {
+        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             print_usage(argv[0]);
             return 0;
         } else {

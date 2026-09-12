@@ -34,8 +34,7 @@ static void print_usage(const char * prog) {
             "  --max-seq <N>          KV cache size (default: model context)\n"
             "  --dump-tokens <path>   Dump prefix token IDs (CSV)\n"
             "  --no-fa                Disable flash attention\n"
-            "  --clamp-fp16           Clamp hidden states to FP16 range\n"
-            "  --help                 Show this help\n",
+            "  --clamp-fp16           Clamp hidden states to FP16 range\n",
             prog);
 }
 
@@ -113,7 +112,7 @@ int main(int argc, char ** argv) {
             no_fa = true;
         } else if (!strcmp(argv[i], "--clamp-fp16")) {
             clamp_fp16 = true;
-        } else if (!strcmp(argv[i], "--help")) {
+        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             print_usage(argv[0]);
             return 0;
         } else {

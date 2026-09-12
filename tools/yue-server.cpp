@@ -579,8 +579,7 @@ static void print_usage(const char * prog) {
             "  --vae-core <N>         VAE tile core frames (default: 1024)\n"
             "  --vae-halo <N>         VAE tile halo frames (default: 16)\n"
             "  --no-fa                Disable flash attention\n"
-            "  --clamp-fp16           Clamp hidden states to FP16 range\n"
-            "  --help                 Show this help\n",
+            "  --clamp-fp16           Clamp hidden states to FP16 range\n",
             prog);
 }
 
@@ -614,7 +613,7 @@ int main(int argc, char ** argv) {
             params.no_fa = true;
         } else if (!strcmp(argv[i], "--clamp-fp16")) {
             params.clamp_fp16 = true;
-        } else if (!strcmp(argv[i], "--help")) {
+        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             print_usage(argv[0]);
             return 0;
         } else {
