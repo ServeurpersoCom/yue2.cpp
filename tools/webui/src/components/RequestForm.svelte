@@ -53,6 +53,12 @@
 			song.id = await putSong(song);
 		}
 		app.songs = (await getAllSongs()).reverse();
+		// The score travels back: resubmitting it varies the interpretation of
+		// the same composition. The semantic stream stays out, it would render
+		// the very same music.
+		if (tracks.length) {
+			app.request.abc = tracks[0].request.abc || '';
+		}
 	}
 
 	// on mount: resume polling for a pending job in localStorage.
@@ -187,8 +193,14 @@
 		clearSection(app.request, 'lm');
 	}
 
-	function clearScore() {
+	function clearScoreSampling() {
 		clearSection(app.request, 'score');
+	}
+
+	// the score itself, so a generation that missed the tune is one click away
+	// from a free composition again
+	function clearScoreText() {
+		app.request.abc = '';
 	}
 
 	function clearSemantic() {
@@ -246,7 +258,18 @@
 		bind:value={app.request.lyrics}
 	></textarea>
 
-	<div class="section-title">Score</div>
+	<div class="section-title section-header">
+		Score
+		<button
+			type="button"
+			class="clear-btn"
+			title="Clear score"
+			onclick={clearScoreText}
+			aria-label="Clear score"
+		>
+			<X size={20} />
+		</button>
+	</div>
 	<textarea
 		rows="8"
 		placeholder="ABC notation. Left empty the model writes one.&#10;X:1&#10;L:1/8&#10;M:4/4&#10;K:Cmaj&#10;&quot;C&quot;c2 e2 g2 c'2|"
@@ -302,7 +325,7 @@
 			type="button"
 			class="clear-btn details-clear"
 			title="Clear score sampling"
-			onclick={clearScore}
+			onclick={clearScoreSampling}
 			aria-label="Clear score sampling"
 		>
 			<X size={20} />
