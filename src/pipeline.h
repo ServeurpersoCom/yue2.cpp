@@ -95,7 +95,13 @@ static bool pipeline_load(Yue2Pipeline *             p,
     p->lm.use_flash_attn = p->lm.use_flash_attn && !params.no_fa;
     p->lm.clamp_fp16     = params.clamp_fp16;
     p->params            = params;
-    p->nar               = {};
+    if (!p->lm.use_flash_attn) {
+        fprintf(stderr, "[Pipeline] Flash attention disabled\n");
+    }
+    if (p->lm.clamp_fp16) {
+        fprintf(stderr, "[Pipeline] FP16 clamp enabled\n");
+    }
+    p->nar = {};
     if (!nar_load(&p->nar, &p->lm, model_path)) {
         qw3lm_free(&p->lm);
         return false;
@@ -174,6 +180,7 @@ static bool pipeline_generate(Yue2Pipeline *      p,
     }
 
     std::vector<int> prefix = yue2_build_prompt_ids(encode, cot, r.style, r.lyrics, has_score ? &abc_ids : nullptr);
+    fprintf(stderr, "[Prompt] %zu tokens, cot=%s\n", prefix.size(), r.cot.c_str());
 
     float            guidance = r.cfg_scale < 0.0f ? yue2_default_guidance(cot) : r.cfg_scale;
     std::vector<int> negative;
@@ -199,6 +206,8 @@ static bool pipeline_generate(Yue2Pipeline *      p,
         Yue2Sampling semantic = r.semantic_sampling;
         int          budget   = (int) (r.duration * (float) YUE2_FRAME_RATE);
         if (budget > 0 && budget < semantic.max_tokens) {
+            fprintf(stderr, "[Gen] Frame budget clamped to %d by the requested duration (%.1f s)\n", budget,
+                    (double) r.duration);
             semantic.max_tokens = budget;
             if (semantic.min_tokens > semantic.max_tokens) {
                 semantic.min_tokens = semantic.max_tokens;

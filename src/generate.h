@@ -57,6 +57,7 @@ static bool yue2_generate(Qwen3LM *                lm,
     const char * label = phase == YUE2_PHASE_ABC ? "Score" : "Semantic";
     Timer        timer;
 
+    Timer prefill_timer;
     qw3lm_reset_kv(lm, 0);
     std::vector<float> cond((size_t) V);
     qw3lm_forward(lm, prefix.data(), (int) prefix.size(), 0, cond.data());
@@ -69,6 +70,8 @@ static bool yue2_generate(Qwen3LM *                lm,
         batched.resize((size_t) 2 * V);
         qw3lm_forward(lm, negative.data(), (int) negative.size(), 1, uncond.data());
     }
+    fprintf(stderr, "[Gen] %s prefill: %.0f ms, %zu tokens, CFG=%.2f, top_k=%d, budget=%d\n", label, prefill_timer.ms(),
+            prefix.size(), (double) cfg_scale, s.top_k, s.max_tokens);
 
     out->tokens.clear();
     out->truncated = true;
@@ -91,6 +94,7 @@ static bool yue2_generate(Qwen3LM *                lm,
         int token = yue2_draw(candidates, seed, step);
         if (token == end) {
             out->truncated = false;
+            fprintf(stderr, "[Gen] %s: end token at step %d\n", label, step);
             break;
         }
         out->tokens.push_back(token);
