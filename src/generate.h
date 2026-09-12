@@ -8,6 +8,7 @@
 
 #include "qwen3-lm.h"
 #include "sampling.h"
+#include "timer.h"
 
 #include <cstdio>
 #include <cstring>
@@ -51,8 +52,10 @@ static bool yue2_generate(Qwen3LM *                lm,
         qw3lm_kv_sets(lm, 2);
     }
 
-    int V   = lm->cfg.vocab_size;
-    int end = phase == YUE2_PHASE_ABC ? YUE2_ABC_END : YUE2_MUSIC_END;
+    int          V     = lm->cfg.vocab_size;
+    int          end   = phase == YUE2_PHASE_ABC ? YUE2_ABC_END : YUE2_MUSIC_END;
+    const char * label = phase == YUE2_PHASE_ABC ? "Score" : "Semantic";
+    Timer        timer;
 
     qw3lm_reset_kv(lm, 0);
     std::vector<float> cond((size_t) V);
@@ -91,6 +94,9 @@ static bool yue2_generate(Qwen3LM *                lm,
             break;
         }
         out->tokens.push_back(token);
+        if ((step % 100) == 0) {
+            fprintf(stderr, "[Gen] %s %d/%d\n", label, step, s.max_tokens);
+        }
         if (step + 1 >= s.max_tokens) {
             continue;
         }
@@ -104,5 +110,9 @@ static bool yue2_generate(Qwen3LM *                lm,
             qw3lm_forward(lm, &token, 1, 0, cond.data());
         }
     }
+
+    int n = (int) out->tokens.size();
+    fprintf(stderr, "[Gen] %s: %d tokens%s, %.1f s (%.1f ms/token)\n", label, n, out->truncated ? " (truncated)" : "",
+            timer.ms() / 1000.0, n > 0 ? timer.ms() / n : 0.0);
     return true;
 }

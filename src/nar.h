@@ -17,6 +17,7 @@
 #pragma once
 
 #include "qwen3-lm.h"
+#include "timer.h"
 
 #include <cmath>
 #include <cstdio>
@@ -370,6 +371,8 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int ar_len) {
         nar_pos_features(N, H, n->scratch_pos_emb.data());
         ggml_backend_tensor_set(n->in_pos_emb, n->scratch_pos_emb.data(), 0, n->scratch_pos_emb.size() * sizeof(float));
 
+        fprintf(stderr, "[NAR] Graph: %d nodes, T_lat=%d, prefix=%d\n", ggml_graph_n_nodes(gf), T_lat, ar_len);
+
         n->scratch_pos.resize(N);
         for (int i = 0; i < N; i++) {
             n->scratch_pos[i] = ar_len + i;
@@ -381,7 +384,6 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int ar_len) {
         ggml_backend_tensor_set(n->in_mask, zeros.data(), 0, zeros.size() * sizeof(uint16_t));
     }
 
-    fprintf(stderr, "[NAR] Graph: %d nodes, T_lat=%d, prefix=%d\n", ggml_graph_n_nodes(gf), T_lat, ar_len);
     return true;
 }
 
@@ -430,7 +432,9 @@ static bool nar_solve(Yue2NAR * n,
     std::vector<float> first(count), mid(count), second(count);
     float              dt = 1.0f / (float) steps;
 
+    Timer solve_timer;
     for (int step = 0; step < steps; step++) {
+        Timer step_timer;
         if (cancelled && cancelled(cancel_data)) {
             fprintf(stderr, "[NAR] Cancelled at step %d\n", step);
             return false;
@@ -448,7 +452,11 @@ static bool nar_solve(Yue2NAR * n,
         for (size_t i = 0; i < count; i++) {
             state[i] -= second[i] * dt;
         }
+        fprintf(stderr, "[NAR] Step %d/%d, %.0f ms\n", step + 1, steps, step_timer.ms());
     }
+
+    fprintf(stderr, "[NAR] Solved: T_lat=%d, %d steps, %.0f ms (%.1f ms/step)\n", T_lat, steps, solve_timer.ms(),
+            solve_timer.ms() / steps);
     return true;
 }
 

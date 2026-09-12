@@ -13,6 +13,7 @@
 #include "generate.h"
 #include "nar.h"
 #include "request.h"
+#include "timer.h"
 #include "torch-cpu-rng.h"
 #include "vae.h"
 
@@ -130,6 +131,7 @@ static bool pipeline_generate(Yue2Pipeline *      p,
                               Yue2Song *          song,
                               bool (*cancelled)(void *) = nullptr,
                               void * cancel_data        = nullptr) {
+    Timer   total_timer;
     Yue2Cot cot;
     if (!pipeline_cot(r.cot, &cot)) {
         fprintf(stderr, "[Pipeline] FATAL: cot must be full, melody or off\n");
@@ -168,7 +170,6 @@ static bool pipeline_generate(Yue2Pipeline *      p,
             abc_ids         = plan.tokens;
             song->score     = bpe_decode(tok, abc_ids);
             song->truncated = plan.truncated;
-            fprintf(stderr, "[Pipeline] Score: %zu tokens%s\n", abc_ids.size(), plan.truncated ? " (truncated)" : "");
         }
     }
 
@@ -214,8 +215,6 @@ static bool pipeline_generate(Yue2Pipeline *      p,
         return false;
     }
     song->truncated = song->truncated || codes.truncated;
-    fprintf(stderr, "[Pipeline] Semantic: %d frames%s, %.1f s\n", song->T_lat, codes.truncated ? " (truncated)" : "",
-            (float) song->T_lat / (float) YUE2_FRAME_RATE);
 
     song->tokens.clear();
     song->tokens.reserve(codes.tokens.size());
@@ -239,9 +238,11 @@ static bool pipeline_generate(Yue2Pipeline *      p,
 
     // The forwards below only fill the cache, their logits go nowhere
     std::vector<float> probe((size_t) p->lm.cfg.vocab_size);
+    int                chunks = (song->T_lat + chunk_size - 1) / chunk_size;
     for (int start = 0; start < song->T_lat; start += chunk_size) {
-        int frames = song->T_lat - start < chunk_size ? song->T_lat - start : chunk_size;
-        int ar_len = prefix_len + frames + 1;
+        Timer chunk_timer;
+        int   frames = song->T_lat - start < chunk_size ? song->T_lat - start : chunk_size;
+        int   ar_len = prefix_len + frames + 1;
 
         // One chunk of a generated song already sits in the cache: the end
         // token completes it. Anything else prefills the chunk sequence.
@@ -260,6 +261,8 @@ static bool pipeline_generate(Yue2Pipeline *      p,
                        cancelled, cancel_data)) {
             return false;
         }
+        fprintf(stderr, "[NAR] Chunk %d/%d: %d frames, prefix %d, %.1f s\n", start / chunk_size + 1, chunks, frames,
+                ar_len, chunk_timer.ms() / 1000.0);
     }
 
     int max_T_audio = song->T_lat * YUE2_HOP;
@@ -270,5 +273,9 @@ static bool pipeline_generate(Yue2Pipeline *      p,
         return false;
     }
     song->audio.resize((size_t) 2 * song->T_audio);
+
+    float seconds = (float) song->T_audio / (float) YUE2_SAMPLE_RATE;
+    fprintf(stderr, "[Pipeline] Done: %.1f s of audio in %.1f s (%.1fx realtime)\n", seconds, total_timer.ms() / 1000.0,
+            seconds / (float) (total_timer.ms() / 1000.0));
     return true;
 }

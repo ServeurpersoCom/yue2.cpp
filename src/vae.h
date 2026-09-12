@@ -13,6 +13,7 @@
 #include "ggml-backend.h"
 #include "ggml.h"
 #include "gguf-weights.h"
+#include "timer.h"
 
 #include <cmath>
 #include <cstdio>
@@ -447,15 +448,16 @@ static int vae_ggml_decode(VAEGGML * m, const float * latent, int T_latent, floa
         return -1;
     }
 
-    int T_out = vae_ggml_compute(m, latent, T_latent, 0);
+    Timer decode_timer;
+    int   T_out = vae_ggml_compute(m, latent, T_latent, 0);
     if (T_out < 0) {
         return -1;
     }
 
     ggml_backend_tensor_get(m->graph_output, audio_out, 0, T_out * 2 * sizeof(float));
 
-    fprintf(stderr, "[VAE] Decoded: T_latent=%d -> T_audio=%d (%.2fs @ 48kHz)\n", T_latent, T_out,
-            (float) T_out / 48000.0f);
+    fprintf(stderr, "[VAE] Decoded: T_latent=%d -> T_audio=%d (%.2fs @ 48kHz), %.0f ms\n", T_latent, T_out,
+            (float) T_out / 48000.0f, decode_timer.ms());
     return T_out;
 }
 
@@ -487,6 +489,7 @@ static int vae_ggml_decode_tiled(VAEGGML *     m,
     int num_tiles = (T_latent + core_frames - 1) / core_frames;
 
     fprintf(stderr, "[VAE] Tiled decode: %d tiles (core=%d, halo=%d)\n", num_tiles, core_frames, halo_frames);
+    Timer decode_timer;
 
     for (int i = 0; i < num_tiles; i++) {
         if (cancel && cancel(cancel_data)) {
@@ -523,8 +526,8 @@ static int vae_ggml_decode_tiled(VAEGGML *     m,
     // Compact ch1 from offset max_T_audio to offset total
     memmove(audio_out + total, audio_out + max_T_audio, total * sizeof(float));
 
-    fprintf(stderr, "[VAE] Tiled decode done: %d tiles -> T_audio=%d (%.2fs @ 48kHz)\n", num_tiles, total,
-            (float) total / 48000.0f);
+    fprintf(stderr, "[VAE] Tiled decode done: %d tiles -> T_audio=%d (%.2fs @ 48kHz), %.0f ms\n", num_tiles, total,
+            (float) total / 48000.0f, decode_timer.ms());
 
     return total;
 }
