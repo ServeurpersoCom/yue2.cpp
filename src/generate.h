@@ -35,16 +35,16 @@ static bool yue2_generate(Qwen3LM *                lm,
                           void * cancel_data        = nullptr) {
     bool guided = cfg_scale != 1.0f;
     if ((int) prefix.size() + s.max_tokens > YUE2_CONTEXT) {
-        fprintf(stderr, "[Gen] FATAL: prefix %zu + budget %d exceeds context %d\n", prefix.size(), s.max_tokens,
+        fprintf(stderr, "[AR] FATAL: prefix %zu + budget %d exceeds context %d\n", prefix.size(), s.max_tokens,
                 YUE2_CONTEXT);
         return false;
     }
     if (guided && negative.empty()) {
-        fprintf(stderr, "[Gen] FATAL: guidance %.3f needs an unconditional prefix\n", (double) cfg_scale);
+        fprintf(stderr, "[AR] FATAL: guidance %.3f needs an unconditional prefix\n", (double) cfg_scale);
         return false;
     }
     if (guided && (int) negative.size() + s.max_tokens > YUE2_CONTEXT) {
-        fprintf(stderr, "[Gen] FATAL: unconditional prefix %zu + budget %d exceeds context %d\n", negative.size(),
+        fprintf(stderr, "[AR] FATAL: unconditional prefix %zu + budget %d exceeds context %d\n", negative.size(),
                 s.max_tokens, YUE2_CONTEXT);
         return false;
     }
@@ -70,7 +70,7 @@ static bool yue2_generate(Qwen3LM *                lm,
         batched.resize((size_t) 2 * V);
         qw3lm_forward(lm, negative.data(), (int) negative.size(), 1, uncond.data());
     }
-    fprintf(stderr, "[Gen] %s prefill: %.0f ms, %zu tokens, CFG=%.2f, top_k=%d, budget=%d\n", label, prefill_timer.ms(),
+    fprintf(stderr, "[AR] %s prefill: %.0f ms, %zu tokens, CFG=%.2f, top_k=%d, budget=%d\n", label, prefill_timer.ms(),
             prefix.size(), (double) cfg_scale, s.top_k, s.max_tokens);
 
     out->tokens.clear();
@@ -80,7 +80,7 @@ static bool yue2_generate(Qwen3LM *                lm,
     std::vector<Yue2Candidate> candidates;
     for (int step = 0; step < s.max_tokens; step++) {
         if (cancelled && cancelled(cancel_data)) {
-            fprintf(stderr, "[Gen] Cancelled at step %d\n", step);
+            fprintf(stderr, "[AR] Cancelled at step %d\n", step);
             return false;
         }
         const float * logits = cond.data();
@@ -94,12 +94,12 @@ static bool yue2_generate(Qwen3LM *                lm,
         int token = yue2_draw(candidates, seed, step);
         if (token == end) {
             out->truncated = false;
-            fprintf(stderr, "[Gen] %s: end token at step %d\n", label, step);
+            fprintf(stderr, "[AR] %s: end token at step %d\n", label, step);
             break;
         }
         out->tokens.push_back(token);
         if ((step % 100) == 0) {
-            fprintf(stderr, "[Gen] %s %d/%d\n", label, step, s.max_tokens);
+            fprintf(stderr, "[AR] %s %d/%d\n", label, step, s.max_tokens);
         }
         if (step + 1 >= s.max_tokens) {
             continue;
@@ -116,7 +116,7 @@ static bool yue2_generate(Qwen3LM *                lm,
     }
 
     int n = (int) out->tokens.size();
-    fprintf(stderr, "[Gen] %s: %d tokens%s, %.1f s (%.1f ms/token)\n", label, n, out->truncated ? " (truncated)" : "",
+    fprintf(stderr, "[AR] %s: %d tokens%s, %.1f s (%.1f ms/token)\n", label, n, out->truncated ? " (truncated)" : "",
             timer.ms() / 1000.0, n > 0 ? timer.ms() / n : 0.0);
     return true;
 }

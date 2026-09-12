@@ -206,7 +206,7 @@ static bool pipeline_generate(Yue2Pipeline *      p,
         Yue2Sampling semantic = r.semantic_sampling;
         int          budget   = (int) (r.duration * (float) YUE2_FRAME_RATE);
         if (budget > 0 && budget < semantic.max_tokens) {
-            fprintf(stderr, "[Gen] Frame budget clamped to %d by the requested duration (%.1f s)\n", budget,
+            fprintf(stderr, "[AR] Frame budget clamped to %d by the requested duration (%.1f s)\n", budget,
                     (double) r.duration);
             semantic.max_tokens = budget;
             if (semantic.min_tokens > semantic.max_tokens) {
