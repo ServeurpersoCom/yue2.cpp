@@ -1,0 +1,211 @@
+# yue2.cpp
+
+Local YuE2 song generation server with browser UI, powered by GGML.
+Style tags and lyrics in, complete stereo 48kHz songs out, with the
+symbolic score the model wrote on the way.
+Runs on CPU, CUDA, Vulkan.
+
+## Download models
+
+Grab one GGUF of each type from Hugging Face and drop them in the
+`models/` folder:
+
+https://huggingface.co/Serveurperso/YuE2-GGUF/tree/main
+
+| Type | Pick one | Size |
+|------|----------|------|
+| Backbone | YuE2-3B-Q8_0.gguf | 3.81 GB |
+| VAE | YuE2-Vae-F32.gguf | 530 MB |
+
+Q8_0 is near lossless. The backbone also ships in BF16 / Q6_K / Q5_K_M, the
+VAE in F32 only since its weights are the audio. The Q8_0 pair runs in about
+4.4 GB plus the KV cache, the native pair in about 7.7 GB.
+
+Alternative: `./models.sh` downloads the default set automatically
+(needs `pip install hf`), `./models.sh --all` everything.
+
+## Build
+
+```
+git clone --recurse-submodules https://github.com/ServeurpersoCom/yue2.cpp.git
+cd yue2.cpp
+```
+
+### Windows
+
+To build from source, install
+[Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+(select "Desktop development with C++" workload) and optionally the
+[CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) and/or the
+[Vulkan SDK](https://vulkan.lunarg.com/sdk/home).
+
+```cmd
+buildcuda.cmd     # NVIDIA GPU
+buildvulkan.cmd   # AMD/Intel GPU (Vulkan)
+buildall.cmd      # all backends (CUDA + Vulkan + CPU, runtime loading)
+```
+
+### Linux / macOS
+
+```bash
+./buildcuda.sh    # NVIDIA GPU
+./buildvulkan.sh  # AMD/Intel GPU (Vulkan)
+./buildcpu.sh     # CPU only (with BLAS)
+./buildall.sh     # all backends (CUDA + Vulkan + CPU, runtime loading)
+```
+
+macOS auto-enables Metal and Accelerate BLAS with any of the above.
+
+## Convert
+
+To build the GGUFs locally from the official checkpoints instead, download
+[m-a-p/YuE2-3B](https://huggingface.co/m-a-p/YuE2-3B) and
+[m-a-p/YuE2-Vae](https://huggingface.co/m-a-p/YuE2-Vae) into `checkpoints/`.
+
+```bash
+pip install hf gguf numpy
+./checkpoints.sh  # downloads both repositories
+./convert.py      # native GGUF, byte-exact dtypes from the source, skips existing
+./quantize.sh     # every quant from the natives, idempotent
+```
+
+| GGUF | Component | Size |
+|------|-----------|------|
+| YuE2-3B-BF16.gguf | 3.6B Mixture-of-Transformers backbone | 7.17 GB |
+| YuE2-Vae-F32.gguf | Oobleck VAE encoder + decoder | 530 MB |
+
+## Run
+
+```bash
+./server.sh       # Linux / macOS
+server.cmd        # Windows
+```
+
+Open http://localhost:8087 in your browser. The WebUI handles everything:
+write style tags and lyrics, generate, read the score the model composed,
+play and download tracks.
+
+Both GGUF are resident for the whole session: the backbone carries the
+autoregressive and the non-autoregressive weight sets in one file, and
+the KV cache sized on the 24576 token context dominates the residency.
+`--max-seq` is the lever that trades context for VRAM.
+
+## Server options
+
+```
+Usage: ./yue-server --model <gguf> --vae <gguf> [options]
+
+Required:
+  --model <gguf>         Backbone GGUF
+  --vae <gguf>           VAE GGUF
+
+Optional:
+  --host <addr>          Listen address (default: 0.0.0.0)
+  --port <N>             Listen port (default: 8087)
+
+Debug:
+  --max-seq <N>          KV cache size (default: model context)
+  --vae-core <N>         VAE tile core frames (default: 1024)
+  --vae-halo <N>         VAE tile halo frames (default: 16)
+  --no-fa                Disable flash attention
+  --clamp-fp16           Clamp hidden states to FP16 range
+```
+
+<details>
+<summary>API endpoints</summary>
+
+The server exposes one compute endpoint and a job system:
+
+**POST /synth** - Submit a generation job (JSON Yue2Request), returns a job
+ID immediately. The single worker thread owns the models and processes
+jobs in FIFO order.
+
+**GET /job?id=N** - Poll job status. **GET /job?id=N&result=1** fetches the
+result as multipart/mixed: one JSON replay request part (the request
+carrying the semantic stream, the score and the resolved seed) then the
+audio part (MP3 or WAV, selected by `output_format` in the request).
+**POST /job?id=N&cancel=1** cancels a running job.
+
+**GET /health** - Returns `{"status":"ok"}`.
+
+**GET /props** - Server version, model paths, frame rate, context, and the
+default request parameters.
+
+**GET /logs** - SSE stream of server stderr.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full API reference
+and Yue2Request JSON specification.
+
+</details>
+
+<details>
+<summary>CLI tools (advanced)</summary>
+
+For scripting without the server, `yue-synth` runs the full pipeline.
+
+```bash
+# quick one-shot
+./build/yue-synth \
+    --model models/YuE2-3B-Q8_0.gguf \
+    --vae models/YuE2-Vae-F32.gguf \
+    --style style.txt \
+    --lyrics lyrics.txt \
+    --out song.mp3
+
+# same request schema as the server
+./build/yue-synth \
+    --model models/YuE2-3B-Q8_0.gguf \
+    --vae models/YuE2-Vae-F32.gguf \
+    --request request.json
+```
+
+Feeding back a request that carries `semantic_tokens` skips the
+autoregressive stage entirely: the prefix and the codes prefill in one
+forward and the song re-renders deterministically, so the flow matching
+steps, the seed or the output format can be iterated for a fraction of
+the cost.
+
+The `yue-plan` tool runs the first autoregressive stage alone and writes
+the ABC score the model intends to play. The score is the white box
+interface: read it, edit it, hand it back with `--abc`.
+
+```bash
+./build/yue-plan --model models/YuE2-3B-Q8_0.gguf --style style.txt --lyrics lyrics.txt --out score.abc
+./build/yue-synth --model models/YuE2-3B-Q8_0.gguf --vae models/YuE2-Vae-F32.gguf \
+    --style style.txt --lyrics lyrics.txt --abc score.abc --out song.mp3
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full JSON
+reference and the `neural-codec` (Oobleck VAE audio codec, encode and
+decode, f32 and reduced-bitrate Q8/Q4 latent formats), `mp3-codec` and
+`quantize` tools.
+
+</details>
+
+## Technical documentation
+
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the complete
+Yue2Request JSON reference, the Mixture-of-Transformers backbone and the
+VAE, the three stage inference recipe, the KV cache the flow matching
+half reads, quantization strategy, VRAM, the parity test suite, and
+architecture internals.
+
+## Acknowledgements
+
+Independent C++ implementation based on
+[YuE2](https://github.com/multimodal-art-projection/YuE) by MAP.
+All model weights are theirs, this is just a native backend.
+Structural template: [minimaxmusic.cpp](https://github.com/ServeurpersoCom/minimaxmusic.cpp)
+and [acestep.cpp](https://github.com/ServeurpersoCom/acestep.cpp).
+
+```bibtex
+@article{yuan2025yue,
+	title = {{YuE}: Scaling Open Foundation Models for Long-Form Music Generation},
+	author = {Yuan, Ruibin and Lin, Hanfeng and Guo, Shuyue and Zhang, Ge and Pan, Jiahao and Zang, Yongyi and Liu, Haohe and Liang, Yiming and Ma, Wenye and Du, Xingjian and Ye, Zhen and Ma, Yinghao and Xue, Wei and Tan, Xu and Guo, Yike},
+	journal = {arXiv preprint arXiv:2503.08638},
+	year = {2025},
+	eprint = {2503.08638},
+	archivePrefix = {arXiv},
+	url = {https://arxiv.org/abs/2503.08638}
+}
+```

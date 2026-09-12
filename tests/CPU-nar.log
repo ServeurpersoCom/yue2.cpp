@@ -1,0 +1,58 @@
+`torch_dtype` is deprecated! Use `dtype` instead!
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367168
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367168
+[Load] NAR backend: CPU (shared)
+[NAR] Attn: Q+K+V fused
+[NAR] MLP: gate+up fused
+[WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
+[NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
+[NAR] Graph: 1387 nodes, T_lat=24, prefix=17
+[Test-NAR] Prefix 17 tokens, T_lat=24, raw_t=0.3500
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367168
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367168
+[Load] NAR backend: CPU (shared)
+[NAR] Attn: Q+K+V fused
+[NAR] MLP: gate+up fused
+[WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
+[NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
+[Test-NAR] Prefix 17 tokens, T_lat=8, 8 midpoint steps
+[Parity] nar: rel rms 8.595e-03 max abs 3.416e-02 OK
+[Parity] nar-ode: rel rms 1.448e-03 max abs 7.528e-03 OK

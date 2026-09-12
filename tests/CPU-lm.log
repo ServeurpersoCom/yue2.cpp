@@ -1,0 +1,16 @@
+`torch_dtype` is deprecated! Use `dtype` instead!
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367168
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[Test-LM] Prefill 15 tokens + decode 1, V=184704 H=2048
+[Parity] lm-prefill: rel rms 2.191e-03 max abs 6.196e-02 argmax 25 vs 25 OK
+[Parity] lm-decode: rel rms 2.060e-03 max abs 9.523e-02 argmax 25 vs 25 OK
