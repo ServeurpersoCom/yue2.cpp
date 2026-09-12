@@ -2,10 +2,11 @@
 """Parity of the backbone autoregressive path, prefill and decode.
 
 Owns both sides: drives the trunk of the checkpoint modeling code directly so
-the run stays on the AR weight set, runs the GGML harness on the same prompt,
-compares the last token logits and the argmax. The FP16 clamp flag is
-specified neutral, so the same cases run again clamped against the same
-reference.
+the run stays on the AR weight set, runs the GGML harness on the same prompts,
+compares the last token logits and the argmax. Two prompts of different
+lengths prefill into their own KV sets and decode in one batched step, which
+is the decode path of every generation. The FP16 clamp flag is specified
+neutral, so the same cases run again clamped against the same reference.
 Run from the tests/ directory.
 
 Usage:
@@ -25,8 +26,11 @@ GGUF = "../models/YuE2-3B-BF16.gguf"
 TMP = "tmp"
 MAX_REL = 2e-2
 
-# EOD, a short English prompt, the empty score slot, then two codec tokens
+# EOD, a short English prompt, the empty score slot, then two codec tokens,
+# and a shorter prompt with one codec token, so the batch mixes cache lengths
 IDS = [151643, 22574, 11, 33897, 2220, 3122, 11, 8205, 2990, 25407, 198, 151847, 151848, 151851, 153087, 161729]
+IDS2 = [151643, 22574, 11, 33897, 198, 151847, 151848, 151851, 161729, 153087]
+SEQS = [IDS, IDS2]
 
 
 def report(label, ref, got, max_rel):
@@ -59,14 +63,19 @@ def main():
 
     with torch.no_grad():
         # The harness prefills every id but the last, then decodes that one
-        ref = {"lm-prefill": logits_of(IDS[:-1]), "lm-decode": logits_of(IDS)}
+        ref = [(logits_of(seq[:-1]), logits_of(seq)) for seq in SEQS]
+
+    args = []
+    for s, seq in enumerate(SEQS):
+        args += (["/"] if s else []) + [str(i) for i in seq]
 
     ok = True
     for suffix, flags in (("", []), ("-clamp", ["--clamp-fp16"])):
-        subprocess.run([BIN, GGUF, TMP + "/lm"] + flags + [str(i) for i in IDS], check=True)
-        for label, path in (("lm-prefill", "/lm_prefill_logits.bin"), ("lm-decode", "/lm_decode_logits.bin")):
-            got = np.fromfile(TMP + path, dtype="float32")
-            ok = report(label + suffix, ref[label], got, MAX_REL) and ok
+        subprocess.run([BIN, GGUF, TMP + "/lm"] + flags + args, check=True)
+        for s in range(len(SEQS)):
+            for label, ref_logits in (("lm-prefill", ref[s][0]), ("lm-decode", ref[s][1])):
+                got = np.fromfile(TMP + "/lm_%s_%d_logits.bin" % (label[3:], s), dtype="float32")
+                ok = report("%s-%d%s" % (label, s, suffix), ref_logits, got, MAX_REL) and ok
 
     sys.exit(0 if ok else 1)
 

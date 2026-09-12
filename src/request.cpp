@@ -21,13 +21,15 @@ void request_init(Yue2Request * r) {
     r->abc    = "";
     r->cot    = "full";
 
-    r->duration        = 360.0f;
-    r->lm_seed         = -1;
-    r->seed            = -1;
-    r->steps           = 32;
-    r->peak_clip       = 10;
-    r->cfg_scale       = -1.0f;
-    r->semantic_tokens = "";
+    r->duration         = 360.0f;
+    r->lm_seed          = -1;
+    r->seed             = -1;
+    r->steps            = 32;
+    r->lm_batch_size    = 1;
+    r->synth_batch_size = 1;
+    r->peak_clip        = 10;
+    r->cfg_scale        = -1.0f;
+    r->semantic_tokens  = "";
 
     r->abc_sampling      = YUE2_ABC_SAMPLING;
     r->semantic_sampling = YUE2_SEMANTIC_SAMPLING;
@@ -140,6 +142,12 @@ static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
     if ((v = yyjson_obj_get(obj, "steps")) && yyjson_is_int(v)) {
         r->steps = yyjson_get_int(v);
     }
+    if ((v = yyjson_obj_get(obj, "lm_batch_size")) && yyjson_is_int(v)) {
+        r->lm_batch_size = yyjson_get_int(v);
+    }
+    if ((v = yyjson_obj_get(obj, "synth_batch_size")) && yyjson_is_int(v)) {
+        r->synth_batch_size = yyjson_get_int(v);
+    }
     parse_sampling(obj, "abc_sampling", &r->abc_sampling);
     parse_sampling(obj, "semantic_sampling", &r->semantic_sampling);
     if ((v = yyjson_obj_get(obj, "semantic_tokens")) && yyjson_is_str(v)) {
@@ -224,6 +232,12 @@ std::string request_to_json(const Yue2Request * r, bool sparse) {
     if (!sparse || r->steps != d.steps) {
         yyjson_mut_obj_add_int(doc, root, "steps", r->steps);
     }
+    if (!sparse || r->lm_batch_size != d.lm_batch_size) {
+        yyjson_mut_obj_add_int(doc, root, "lm_batch_size", r->lm_batch_size);
+    }
+    if (!sparse || r->synth_batch_size != d.synth_batch_size) {
+        yyjson_mut_obj_add_int(doc, root, "synth_batch_size", r->synth_batch_size);
+    }
     add_sampling(doc, root, "abc_sampling", r->abc_sampling, d.abc_sampling, sparse);
     add_sampling(doc, root, "semantic_sampling", r->semantic_sampling, d.semantic_sampling, sparse);
     if (!sparse || r->semantic_tokens != d.semantic_tokens) {
@@ -265,4 +279,19 @@ void request_resolve_seed(Yue2Request * r) {
     if (r->seed < 0) {
         r->seed = random_seed();
     }
+}
+
+Yue2Request request_replay(const Yue2Request & base,
+                           const std::string & abc,
+                           const std::string & tokens,
+                           int                 song,
+                           int                 variation) {
+    Yue2Request r      = base;
+    r.abc              = abc;
+    r.semantic_tokens  = tokens;
+    r.lm_seed          = base.lm_seed + song;
+    r.seed             = base.seed + variation;
+    r.lm_batch_size    = 1;
+    r.synth_batch_size = 1;
+    return r;
 }

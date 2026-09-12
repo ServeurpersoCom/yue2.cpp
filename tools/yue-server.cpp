@@ -438,19 +438,6 @@ static std::string json_string(const char * key, const std::string & value) {
     return out;
 }
 
-// The replay request of a rendered track: the semantic stream, the score and
-// the seed the track actually consumed, so a resubmit reproduces it without
-// the autoregression.
-static std::string replay_request_json(const Yue2Request & base, const Yue2Song & song) {
-    Yue2Request replay = base;
-    replay.abc         = song.score.empty() ? base.abc : song.score;
-    replay.semantic_tokens.clear();
-    for (size_t i = 0; i < song.tokens.size(); i++) {
-        replay.semantic_tokens += (i ? "," : "") + std::to_string(song.tokens[i]);
-    }
-    return request_to_json(&replay);
-}
-
 static void handle_props(const httplib::Request &, httplib::Response & res) {
     Yue2Request d;
     request_init(&d);
@@ -508,6 +495,16 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
         res.set_content(json_string("error", "steps must be positive"), "application/json");
         return false;
     }
+    if (r->lm_batch_size < 1 || r->lm_batch_size > g_pipeline.params.max_batch) {
+        res.status = 400;
+        res.set_content(json_string("error", "lm_batch_size exceeds --max-batch"), "application/json");
+        return false;
+    }
+    if (r->synth_batch_size < 1 || r->synth_batch_size > 9) {
+        res.status = 400;
+        res.set_content(json_string("error", "synth_batch_size must be between 1 and 9"), "application/json");
+        return false;
+    }
     if (!yue2_sampling_valid(r->abc_sampling, "abc") || !yue2_sampling_valid(r->semantic_sampling, "semantic")) {
         res.status = 400;
         res.set_content(json_string("error", "sampling preset outside the protocol bounds"), "application/json");
@@ -525,8 +522,8 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
 static void run_job(std::shared_ptr<Job> job, Yue2Request request) {
     active_job_set(job);
 
-    Yue2Song song;
-    bool     ok = pipeline_generate(&g_pipeline, request, &song, server_cancel_job, (void *) &job->cancel);
+    std::vector<Yue2Song> songs;
+    bool ok = pipeline_generate(&g_pipeline, request, &songs, server_cancel_job, (void *) &job->cancel);
 
     if (!ok) {
         active_job_set(nullptr);
@@ -538,24 +535,32 @@ static void run_job(std::shared_ptr<Job> job, Yue2Request request) {
     WavFormat wav_fmt = WAV_S16;
     audio_parse_format(request.output_format.c_str(), is_mp3, wav_fmt);
 
-    // Normalization belongs to the output stage, WAV32 keeping the full range
-    if (is_mp3 || wav_fmt != WAV_F32) {
-        audio_normalize(song.audio.data(), song.T_audio * 2, request.peak_clip);
-    }
-
+    // One part pair per track, song-major. The replay request of a track
+    // carries its semantic stream, its score and the seeds it consumed, so a
+    // resubmit reproduces it without the autoregression.
+    const int                M = request.synth_batch_size;
     std::vector<std::string> audio_parts;
-    audio_parts.push_back(is_mp3 ?
-                              audio_encode_mp3(song.audio.data(), song.T_audio, YUE2_SAMPLE_RATE, request.mp3_bitrate) :
-                              audio_encode_wav(song.audio.data(), song.T_audio, YUE2_SAMPLE_RATE, wav_fmt));
     std::vector<std::string> request_parts;
-    request_parts.push_back(replay_request_json(request, song));
+    for (size_t t = 0; t < songs.size(); t++) {
+        Yue2Song & song = songs[t];
+        // Normalization belongs to the output stage, WAV32 keeping the full range
+        if (is_mp3 || wav_fmt != WAV_F32) {
+            audio_normalize(song.audio.data(), song.T_audio * 2, request.peak_clip);
+        }
+        audio_parts.push_back(
+            is_mp3 ? audio_encode_mp3(song.audio.data(), song.T_audio, YUE2_SAMPLE_RATE, request.mp3_bitrate) :
+                     audio_encode_wav(song.audio.data(), song.T_audio, YUE2_SAMPLE_RATE, wav_fmt));
+        if (audio_parts.back().empty()) {
+            active_job_set(nullptr);
+            job->status.store(JobStatus::FAILED);
+            return;
+        }
+        Yue2Request replay = request_replay(request, song.score.empty() ? request.abc : song.score,
+                                            pipeline_format_tokens(song.tokens), (int) t / M, (int) t % M);
+        request_parts.push_back(request_to_json(&replay));
+    }
 
     active_job_set(nullptr);
-    if (audio_parts[0].empty()) {
-        job->status.store(JobStatus::FAILED);
-        return;
-    }
-
     job->result_body = multipart_build_tracks(request_parts, audio_parts, is_mp3 ? "audio/mpeg" : "audio/wav");
     job->result_mime = MULTIPART_MIME;
     job->status.store(JobStatus::DONE);
@@ -573,6 +578,7 @@ static void print_usage(const char * prog) {
             "Optional:\n"
             "  --host <addr>          Listen address (default: 0.0.0.0)\n"
             "  --port <N>             Listen port (default: 8087)\n"
+            "  --max-batch <N>        Song batch limit, one KV set each (default: 1)\n"
             "\n"
             "Debug:\n"
             "  --max-seq <N>          KV cache size (default: model context)\n"
@@ -603,6 +609,11 @@ int main(int argc, char ** argv) {
             host = argv[++i];
         } else if (!strcmp(argv[i], "--port") && !last) {
             port = atoi(argv[++i]);
+        } else if (!strcmp(argv[i], "--max-batch") && !last) {
+            params.max_batch = atoi(argv[++i]);
+            if (params.max_batch < 1) {
+                params.max_batch = 1;
+            }
         } else if (!strcmp(argv[i], "--max-seq") && !last) {
             params.max_seq = atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--vae-core") && !last) {

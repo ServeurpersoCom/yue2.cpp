@@ -147,11 +147,13 @@ int main(int argc, char ** argv) {
         }
     }
 
-    Yue2Generation plan;
-    if (!yue2_generate(&lm, prefix, {}, 1.0f, r.abc_sampling, r.lm_seed, YUE2_PHASE_ABC, &plan)) {
+    // One plan: the batch counters of the request belong to the song pipeline
+    std::vector<Yue2Generation> plans;
+    if (!yue2_generate(&lm, { prefix }, {}, 1.0f, r.abc_sampling, r.lm_seed, YUE2_PHASE_ABC, &plans)) {
         qw3lm_free(&lm);
         return 1;
     }
+    const Yue2Generation & plan = plans[0];
 
     std::string score = bpe_decode(&tok, plan.tokens);
     if (!write_file(out_path, score)) {

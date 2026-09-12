@@ -14,6 +14,9 @@
 // second non-learnable sinusoidal embedding over its own frame index.
 // The latent sequence is LATENT_START, T_lat content frames, LATENT_END, with
 // clean zeros at both ends.
+//
+// Variations: M noise draws of the same block solve in one graph, the AR
+// prefix rows repeated for each, the frame inputs shared.
 #pragma once
 
 #include "qwen3-lm.h"
@@ -52,14 +55,16 @@ struct Yue2NAR {
     // Graph cache: the ODE replays one shape for every one of its evaluations
     GraphArena           arena;       // stable node addresses across rebuilds
     struct ggml_cgraph * graph;
-    struct ggml_tensor * in_x;        // [latent_dim, N_nar]
+    struct ggml_tensor * in_x;        // [latent_dim, N_nar, M]
     struct ggml_tensor * in_time;     // [256]
     struct ggml_tensor * in_pos_emb;  // [H, N_nar]
     struct ggml_tensor * in_pos;      // [N_nar] i32
     struct ggml_tensor * in_mask;     // [ar_len + N_nar, pad(N_nar)] f16, all zero
-    struct ggml_tensor * out_v;       // [latent_dim, T_lat]
+    struct ggml_tensor * out_v;       // [latent_dim, T_lat, M]
     int                  graph_T;     // cached T_lat (0 = no cache)
+    int                  graph_M;     // cached variation count
     int                  graph_ar;    // cached ar_len
+    int                  graph_set;   // cached KV set
 
     std::vector<float>   scratch_x;
     std::vector<float>   scratch_pos_emb;
@@ -200,43 +205,45 @@ static struct ggml_tensor * nar_linear_bias(struct ggml_context * ctx,
     return ggml_add(ctx, ggml_mul_mat(ctx, w, x), b);
 }
 
-// NAR attention: fresh Q/K/V for the latent block, concatenated with the AR
-// prefix window of the cache. The graph only reads the cache, so there is no
-// write to order against the read and the hazard cannot exist.
+// NAR attention: fresh Q/K/V for the latent block of every variation,
+// concatenated with the AR prefix window of the cache, which every variation
+// reads. The graph only reads the cache, so there is no write to order against
+// the read and the hazard cannot exist.
 static struct ggml_tensor * nar_build_attn(struct ggml_context * ctx,
                                            const Qwen3LMConfig & c,
                                            Qwen3Layer *          ly,
-                                           struct ggml_tensor *  x,
-                                           struct ggml_tensor *  positions,
-                                           struct ggml_tensor *  mask,     // [ar_len + S, pad(S)] f16, all zero
-                                           struct ggml_tensor *  cache_k,  // [D, max_seq, Nkv] f16
+                                           struct ggml_tensor *  x,          // [H, N, M]
+                                           struct ggml_tensor *  positions,  // [N]
+                                           struct ggml_tensor *  mask,       // [ar_len + N, pad(N)] f16, all zero
+                                           struct ggml_tensor *  cache_k,    // [D, max_seq, Nkv] f16
                                            struct ggml_tensor *  cache_v,
                                            int                   ar_len,
-                                           int                   n_tokens,
+                                           int                   N,
+                                           int                   M,
                                            bool                  use_flash_attn,
                                            bool                  clamp_fp16) {
     int D   = c.head_dim;
     int Nh  = c.n_heads;
     int Nkv = c.n_kv_heads;
-    int S   = n_tokens;
 
     struct ggml_tensor *q, *k, *v;
     int                 q_dim  = Nh * D;
     int                 kv_dim = Nkv * D;
     if (ly->qkv) {
         struct ggml_tensor * qkv = qwen3_linear(ctx, ly->qkv, x);
-        q                        = ggml_cont(ctx, ggml_view_2d(ctx, qkv, q_dim, S, qkv->nb[1], 0));
-        k = ggml_cont(ctx, ggml_view_2d(ctx, qkv, kv_dim, S, qkv->nb[1], (size_t) q_dim * qkv->nb[0]));
-        v = ggml_cont(ctx, ggml_view_2d(ctx, qkv, kv_dim, S, qkv->nb[1], (size_t) (q_dim + kv_dim) * qkv->nb[0]));
+        q                        = ggml_cont(ctx, ggml_view_3d(ctx, qkv, q_dim, N, M, qkv->nb[1], qkv->nb[2], 0));
+        k = ggml_cont(ctx, ggml_view_3d(ctx, qkv, kv_dim, N, M, qkv->nb[1], qkv->nb[2], (size_t) q_dim * qkv->nb[0]));
+        v = ggml_cont(
+            ctx, ggml_view_3d(ctx, qkv, kv_dim, N, M, qkv->nb[1], qkv->nb[2], (size_t) (q_dim + kv_dim) * qkv->nb[0]));
     } else {
         q = qwen3_linear(ctx, ly->q_proj, x);
         k = qwen3_linear(ctx, ly->k_proj, x);
         v = qwen3_linear(ctx, ly->v_proj, x);
     }
 
-    q = ggml_reshape_3d(ctx, q, D, Nh, S);
-    k = ggml_reshape_3d(ctx, k, D, Nkv, S);
-    v = ggml_reshape_3d(ctx, v, D, Nkv, S);
+    q = ggml_reshape_4d(ctx, q, D, Nh, N, M);
+    k = ggml_reshape_4d(ctx, k, D, Nkv, N, M);
+    v = ggml_reshape_4d(ctx, v, D, Nkv, N, M);
 
     q = ggml_rms_norm(ctx, q, c.rms_norm_eps);
     q = ggml_mul(ctx, q, qwen3_f32(ctx, ly->q_norm));
@@ -246,12 +253,9 @@ static struct ggml_tensor * nar_build_attn(struct ggml_context * ctx,
     q = ggml_rope_ext(ctx, q, positions, NULL, D, 2, 0, c.rope_theta, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f);
     k = ggml_rope_ext(ctx, k, positions, NULL, D, 2, 0, c.rope_theta, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f);
 
-    q = ggml_permute(ctx, q, 0, 2, 1, 3);  // [D, S, Nh]
-    k = ggml_permute(ctx, k, 0, 2, 1, 3);  // [D, S, Nkv]
-    v = ggml_permute(ctx, v, 0, 2, 1, 3);
-
-    k = ggml_cont(ctx, k);
-    v = ggml_cont(ctx, v);
+    q = ggml_cont(ctx, ggml_permute(ctx, q, 0, 2, 1, 3));  // [D, N, Nh, M]
+    k = ggml_cont(ctx, ggml_permute(ctx, k, 0, 2, 1, 3));  // [D, N, Nkv, M]
+    v = ggml_cont(ctx, ggml_permute(ctx, v, 0, 2, 1, 3));
 
     // Clamp V before the F16 cast: the clamp kernels walk contiguous memory
     if (clamp_fp16) {
@@ -260,11 +264,16 @@ static struct ggml_tensor * nar_build_attn(struct ggml_context * ctx,
     k = ggml_cast(ctx, k, GGML_TYPE_F16);
     v = ggml_cast(ctx, v, GGML_TYPE_F16);
 
-    // AR prefix rows, in the f16 layout of the cache
+    // AR prefix rows in the f16 layout of the cache, repeated per variation
     size_t               nb1  = (size_t) D * ggml_type_size(GGML_TYPE_F16);
     size_t               nb2  = (size_t) D * c.max_seq_len * ggml_type_size(GGML_TYPE_F16);
     struct ggml_tensor * k_ar = ggml_cont(ctx, ggml_view_3d(ctx, cache_k, D, ar_len, Nkv, nb1, nb2, 0));
     struct ggml_tensor * v_ar = ggml_cont(ctx, ggml_view_3d(ctx, cache_v, D, ar_len, Nkv, nb1, nb2, 0));
+    if (M > 1) {
+        struct ggml_tensor * shape = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, D, ar_len, Nkv, M);
+        k_ar                       = ggml_repeat(ctx, k_ar, shape);
+        v_ar                       = ggml_repeat(ctx, v_ar, shape);
+    }
 
     struct ggml_tensor * k_full = ggml_concat(ctx, k_ar, k, 1);
     struct ggml_tensor * v_full = ggml_concat(ctx, v_ar, v, 1);
@@ -276,12 +285,16 @@ static struct ggml_tensor * nar_build_attn(struct ggml_context * ctx,
         ggml_prec_set_acc(attn, GGML_PREC_F32);
     }
 
-    attn = ggml_reshape_2d(ctx, attn, Nh * D, S);
+    attn = ggml_reshape_3d(ctx, attn, Nh * D, N, M);
     return qwen3_linear(ctx, ly->o_proj, attn);
 }
 
-static bool nar_build_graph(Yue2NAR * n, int T_lat, int ar_len) {
+// Build the velocity graph of M variations of a T_lat frame block over the
+// AR prefix of KV set kv_set. The frame inputs hold for a shape (T_lat,
+// ar_len), the graph itself is rebuilt at every evaluation.
+static bool nar_build_graph(Yue2NAR * n, int T_lat, int M, int ar_len, int kv_set) {
     bool                  new_shape = (n->graph_T != T_lat || n->graph_ar != ar_len);
+    bool                  new_key   = new_shape || n->graph_M != M || n->graph_set != kv_set;
     const Qwen3LMConfig & c         = n->lm->cfg;
     int                   H         = c.hidden_size;
     int                   N         = T_lat + 2;
@@ -291,7 +304,6 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int ar_len) {
                 c.max_seq_len);
         return false;
     }
-
     // Rewinding the arena rebuilds every node at the address it already had,
     // so the backend graph cache resolves to the same executable at every
     // evaluation of the ODE instead of thrashing on fresh allocations.
@@ -299,7 +311,7 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int ar_len) {
     struct ggml_context * ctx = graph_arena_begin(&n->arena);
     struct ggml_cgraph *  gf  = ggml_new_graph_custom(ctx, YUE2_NAR_GRAPH_NODES, false);
 
-    n->in_x = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n->latent_dim, N);
+    n->in_x = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, n->latent_dim, N, M);
     ggml_set_name(n->in_x, "nar_x");
     ggml_set_input(n->in_x);
     n->in_time = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, YUE2_TIME_EMBED_DIM);
@@ -333,7 +345,8 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int ar_len) {
         }
     }
 
-    // Latent projection, shared timestep embedding, frame embedding
+    // Latent projection, shared timestep embedding, frame embedding, the last
+    // two broadcast over the variations
     struct ggml_tensor * hidden = nar_linear_bias(ctx, n->vae2llm_w, n->vae2llm_b, n->in_x);
     struct ggml_tensor * temb   = nar_linear_bias(ctx, n->time_w0, n->time_b0, n->in_time);
     temb                        = nar_linear_bias(ctx, n->time_w1, n->time_b1, ggml_silu(ctx, temb));
@@ -344,14 +357,14 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int ar_len) {
         Qwen3Layer *         ly   = &n->layers[l];
         struct ggml_tensor * norm = qwen3_rms_norm(ctx, hidden, ly->input_layernorm, c.rms_norm_eps);
         struct ggml_tensor * attn =
-            nar_build_attn(ctx, c, ly, norm, n->in_pos, n->in_mask, n->lm->kv_k[0][l], n->lm->kv_v[0][l], ar_len, N,
-                           n->lm->use_flash_attn, n->lm->clamp_fp16);
+            nar_build_attn(ctx, c, ly, norm, n->in_pos, n->in_mask, n->lm->kv_k[kv_set][l], n->lm->kv_v[kv_set][l],
+                           ar_len, N, M, n->lm->use_flash_attn, n->lm->clamp_fp16);
         hidden = ggml_add(ctx, hidden, attn);
         if (n->lm->clamp_fp16) {
             hidden = ggml_clamp(ctx, hidden, -65504.0f, 65504.0f);
         }
         norm   = qwen3_rms_norm(ctx, hidden, ly->post_attn_layernorm, c.rms_norm_eps);
-        hidden = ggml_add(ctx, hidden, qwen3_build_mlp(ctx, ly, norm, N));
+        hidden = ggml_add(ctx, hidden, qwen3_build_mlp(ctx, ly, norm, N * M));
         if (n->lm->clamp_fp16) {
             hidden = ggml_clamp(ctx, hidden, -65504.0f, 65504.0f);
         }
@@ -359,23 +372,24 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int ar_len) {
 
     hidden = qwen3_rms_norm(ctx, hidden, n->lm->final_norm, c.rms_norm_eps);
 
-    // Velocity head, then drop the LATENT_START and LATENT_END columns
+    // Velocity head, then drop the LATENT_START and LATENT_END columns of
+    // every variation
     struct ggml_tensor * pred = nar_linear_bias(ctx, n->llm2vae_w, n->llm2vae_b, hidden);
-    n->out_v                  = ggml_cont(ctx, ggml_view_2d(ctx, pred, n->latent_dim, T_lat, pred->nb[1], pred->nb[1]));
+    n->out_v = ggml_cont(ctx, ggml_view_3d(ctx, pred, n->latent_dim, T_lat, M, pred->nb[1], pred->nb[2], pred->nb[1]));
     ggml_set_name(n->out_v, "nar_velocity");
     ggml_set_output(n->out_v);
     ggml_build_forward_expand(gf, n->out_v);
 
-    n->graph    = gf;
-    n->graph_T  = T_lat;
-    n->graph_ar = ar_len;
+    n->graph     = gf;
+    n->graph_T   = T_lat;
+    n->graph_M   = M;
+    n->graph_ar  = ar_len;
+    n->graph_set = kv_set;
 
     if (new_shape) {
         n->scratch_pos_emb.resize((size_t) H * N);
         nar_pos_features(N, H, n->scratch_pos_emb.data());
         ggml_backend_tensor_set(n->in_pos_emb, n->scratch_pos_emb.data(), 0, n->scratch_pos_emb.size() * sizeof(float));
-
-        fprintf(stderr, "[NAR] Graph: %d nodes, T_lat=%d, prefix=%d\n", ggml_graph_n_nodes(gf), T_lat, ar_len);
 
         n->scratch_pos.resize(N);
         for (int i = 0; i < N; i++) {
@@ -387,15 +401,19 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int ar_len) {
         std::vector<uint16_t> zeros((size_t) ggml_nelements(n->in_mask), 0);
         ggml_backend_tensor_set(n->in_mask, zeros.data(), 0, zeros.size() * sizeof(uint16_t));
     }
-
+    if (new_key) {
+        fprintf(stderr, "[NAR] Graph: %d nodes, T_lat=%d, variations=%d, prefix=%d, set=%d\n", ggml_graph_n_nodes(gf),
+                T_lat, M, ar_len, kv_set);
+    }
     return true;
 }
 
-// One velocity evaluation: x_t [T_lat, latent_dim] time-major, raw timestep.
-// ar_len is the AR prefix length already resident in KV set 0.
-// Writes v [T_lat, latent_dim] time-major.
-static bool nar_velocity(Yue2NAR * n, const float * x_t, int T_lat, int ar_len, float raw_t, float * v_out) {
-    if (!nar_build_graph(n, T_lat, ar_len)) {
+// One velocity evaluation of M variations: x_t [M, T_lat, latent_dim] time
+// major per variation, raw timestep shared. ar_len is the AR prefix length
+// resident in KV set kv_set. Writes v in the layout of x_t.
+static bool
+nar_velocity(Yue2NAR * n, const float * x_t, int T_lat, int M, int ar_len, int kv_set, float raw_t, float * v_out) {
+    if (!nar_build_graph(n, T_lat, M, ar_len, kv_set)) {
         return false;
     }
 
@@ -408,9 +426,14 @@ static bool nar_velocity(Yue2NAR * n, const float * x_t, int T_lat, int ar_len, 
         return false;
     }
 
-    int N = T_lat + 2;
-    n->scratch_x.assign((size_t) n->latent_dim * N, 0.0f);
-    memcpy(n->scratch_x.data() + n->latent_dim, x_t, (size_t) n->latent_dim * T_lat * sizeof(float));
+    // LATENT_START and LATENT_END are zero rows around every variation
+    int    N     = T_lat + 2;
+    size_t block = (size_t) n->latent_dim * T_lat;
+    n->scratch_x.assign((size_t) n->latent_dim * N * M, 0.0f);
+    for (int m = 0; m < M; m++) {
+        memcpy(n->scratch_x.data() + (size_t) n->latent_dim * N * m + n->latent_dim, x_t + block * m,
+               block * sizeof(float));
+    }
     ggml_backend_tensor_set(n->in_x, n->scratch_x.data(), 0, n->scratch_x.size() * sizeof(float));
 
     float feats[YUE2_TIME_EMBED_DIM];
@@ -418,21 +441,23 @@ static bool nar_velocity(Yue2NAR * n, const float * x_t, int T_lat, int ar_len, 
     ggml_backend_tensor_set(n->in_time, feats, 0, sizeof(feats));
 
     ggml_backend_sched_graph_compute(n->sched, n->graph);
-    ggml_backend_tensor_get(n->out_v, v_out, 0, (size_t) n->latent_dim * T_lat * sizeof(float));
+    ggml_backend_tensor_get(n->out_v, v_out, 0, block * M * sizeof(float));
     return true;
 }
 
 // Midpoint flow matching solver, t walking from 1 down to 0.
-// state [T_lat, latent_dim] time-major holds the noise on entry and the
-// latents on exit.
+// state [M, T_lat, latent_dim] holds the noise of every variation on entry
+// and the latents on exit.
 static bool nar_solve(Yue2NAR * n,
                       float *   state,
                       int       T_lat,
+                      int       M,
                       int       ar_len,
+                      int       kv_set,
                       int       steps,
                       bool (*cancelled)(void *) = nullptr,
                       void * cancel_data        = nullptr) {
-    size_t             count = (size_t) n->latent_dim * T_lat;
+    size_t             count = (size_t) n->latent_dim * T_lat * M;
     std::vector<float> first(count), mid(count), second(count);
     float              dt = 1.0f / (float) steps;
 
@@ -444,13 +469,13 @@ static bool nar_solve(Yue2NAR * n,
             return false;
         }
         float t = 1.0f - (float) step * dt;
-        if (!nar_velocity(n, state, T_lat, ar_len, nar_logit_clamped(t), first.data())) {
+        if (!nar_velocity(n, state, T_lat, M, ar_len, kv_set, nar_logit_clamped(t), first.data())) {
             return false;
         }
         for (size_t i = 0; i < count; i++) {
             mid[i] = state[i] - first[i] * (dt * 0.5f);
         }
-        if (!nar_velocity(n, mid.data(), T_lat, ar_len, nar_logit_clamped(t - dt * 0.5f), second.data())) {
+        if (!nar_velocity(n, mid.data(), T_lat, M, ar_len, kv_set, nar_logit_clamped(t - dt * 0.5f), second.data())) {
             return false;
         }
         for (size_t i = 0; i < count; i++) {
@@ -459,8 +484,8 @@ static bool nar_solve(Yue2NAR * n,
         fprintf(stderr, "[NAR] Step %d/%d, %.0f ms\n", step + 1, steps, step_timer.ms());
     }
 
-    fprintf(stderr, "[NAR] Solved: T_lat=%d, %d steps, %.0f ms (%.1f ms/step)\n", T_lat, steps, solve_timer.ms(),
-            solve_timer.ms() / steps);
+    fprintf(stderr, "[NAR] Solved: T_lat=%d, %d variations, %d steps, %.0f ms (%.1f ms/step)\n", T_lat, M, steps,
+            solve_timer.ms(), solve_timer.ms() / steps);
     return true;
 }
 

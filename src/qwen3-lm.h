@@ -78,7 +78,7 @@ struct Qwen3LM {
     // 4D batched: per-layer [D, max_seq, Nkv, n_sets] for batched flash_attn
     struct ggml_tensor *  kv_k4[QW3LM_MAX_LAYERS];
     struct ggml_tensor *  kv_v4[QW3LM_MAX_LAYERS];
-    // 3D views: per-set, per-layer [D, max_seq, Nkv] for prefill/copy_kv
+    // 3D views: per-set, per-layer [D, max_seq, Nkv] for prefill, copy and the NAR read
     struct ggml_tensor *  kv_k[QW3LM_MAX_KV_SETS][QW3LM_MAX_LAYERS];
     struct ggml_tensor *  kv_v[QW3LM_MAX_KV_SETS][QW3LM_MAX_LAYERS];
     int                   kv_pos[QW3LM_MAX_KV_SETS];
@@ -223,7 +223,7 @@ static void qw3lm_alloc_kv_cache(Qwen3LM * m, int n_sets) {
         snprintf(name, sizeof(name), "kv_v4_%d", l);
         ggml_set_name(m->kv_v4[l], name);
 
-        // 3D views per set (backward compat for prefill/copy_kv)
+        // 3D views per set
         for (int s = 0; s < n_sets; s++) {
             size_t off = (size_t) s * D * S * Nkv * ggml_type_size(GGML_TYPE_F16);
             m->kv_k[s][l] =
@@ -267,6 +267,16 @@ static void qw3lm_kv_sets(Qwen3LM * m, int n_sets) {
     static_graph_release(&m->batch_graph.graph, m->sched);
     m->batch_graph.built = false;
     qw3lm_alloc_kv_cache(m, n_sets);
+}
+
+// Replicate one set into another, position included: a prefix shared by
+// several sequences prefills once
+static void qw3lm_copy_kv(Qwen3LM * m, int src, int dst) {
+    for (int l = 0; l < m->cfg.n_layers; l++) {
+        ggml_backend_tensor_copy(m->kv_k[src][l], m->kv_k[dst][l]);
+        ggml_backend_tensor_copy(m->kv_v[src][l], m->kv_v[dst][l]);
+    }
+    m->kv_pos[dst] = m->kv_pos[src];
 }
 
 // Clear KV cache for a given set

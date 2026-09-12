@@ -1,13 +1,13 @@
 #pragma once
 // pipeline.h: YuE2 generation pipeline
 //
-// Holds the two GGUF of a release resident and turns one request into audio:
-// a symbolic plan, a semantic token stream, the acoustic flow matching solved
-// from the AR prefix cache, and the VAE decode to 48 kHz stereo.
+// Holds the two GGUF of a release resident and turns one request into
+// tracks: a symbolic plan, a semantic token stream, the acoustic flow
+// matching solved from the AR prefix cache, and the VAE decode to 48 kHz
+// stereo, for every song of the batch and every noise variation of a song.
 //
-// The NAR reads the KV cache the AR pass already filled, so its own prefill
-// never runs: one forward of the end token completes the sequence it attends
-// to.
+// The NAR reads the KV cache the AR decode left complete, end token
+// included, so a generated song that fits one chunk never prefills.
 
 #include "bpe.h"
 #include "generate.h"
@@ -18,6 +18,7 @@
 #include "vae.h"
 
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -27,10 +28,12 @@
 #define YUE2_HOP         1920
 
 // VRAM and compatibility knobs. The AR and NAR halves share one KV cache by
-// construction, so there is no eviction group to trade here: max_seq is the
-// memory lever, it sizes the cache that dominates the residency.
+// construction, so there is no eviction group to trade here: max_seq and
+// max_batch are the memory levers, they size the cache that dominates the
+// residency.
 struct Yue2PipelineParams {
     int  max_seq    = 0;      // 0 = model context, the whole 24576
+    int  max_batch  = 1;      // song batch limit, one KV set per song, two under guidance
     bool no_fa      = false;  // disable flash attention
     bool clamp_fp16 = false;  // clamp hidden states on sub-Ampere CUDA
     int  vae_core   = 1024;   // VAE tile core frames
@@ -77,6 +80,15 @@ static bool pipeline_parse_tokens(const std::string & csv, std::vector<int> * ou
         p = end;
     }
     return !out->empty();
+}
+
+// Writes the CSV interchange of a semantic stream
+static std::string pipeline_format_tokens(const std::vector<int> & tokens) {
+    std::string csv;
+    for (size_t i = 0; i < tokens.size(); i++) {
+        csv += (i ? "," : "") + std::to_string(tokens[i]);
+    }
+    return csv;
 }
 
 static bool pipeline_load(Yue2Pipeline *             p,
@@ -132,9 +144,13 @@ static bool pipeline_cot(const std::string & name, Yue2Cot * cot) {
     return false;
 }
 
-static bool pipeline_generate(Yue2Pipeline *      p,
-                              const Yue2Request & r,
-                              Yue2Song *          song,
+// Renders lm_batch_size songs times synth_batch_size variations, song-major:
+// track song * M + variation. Song i draws its tokens with lm_seed + i in
+// KV set i, variation j draws its noise with seed + j, and the M variations
+// of a song solve in one NAR graph over the set the AR left complete.
+static bool pipeline_generate(Yue2Pipeline *          p,
+                              const Yue2Request &     r,
+                              std::vector<Yue2Song> * songs,
                               bool (*cancelled)(void *) = nullptr,
                               void * cancel_data        = nullptr) {
     Timer   total_timer;
@@ -143,8 +159,8 @@ static bool pipeline_generate(Yue2Pipeline *      p,
         fprintf(stderr, "[Pipeline] FATAL: cot must be full, melody or off\n");
         return false;
     }
-    if (r.steps < 1) {
-        fprintf(stderr, "[Pipeline] FATAL: steps must be positive\n");
+    if (r.steps < 1 || r.lm_batch_size < 1 || r.synth_batch_size < 1) {
+        fprintf(stderr, "[Pipeline] FATAL: steps and batch sizes must be positive\n");
         return false;
     }
     if (!yue2_sampling_valid(r.abc_sampling, "abc") || !yue2_sampling_valid(r.semantic_sampling, "semantic")) {
@@ -156,51 +172,63 @@ static bool pipeline_generate(Yue2Pipeline *      p,
         return bpe_encode(tok, text);
     };
 
-    song->score.clear();
-    song->truncated = false;
+    // A supplied stream is one song, the batch counter has nothing to draw
+    bool replay = !r.semantic_tokens.empty();
+    if (replay && r.lm_batch_size > 1) {
+        fprintf(stderr, "[Pipeline] Replay: lm_batch_size ignored\n");
+    }
+    const int B = replay ? 1 : r.lm_batch_size;
+    const int M = r.synth_batch_size;
 
-    // Score: supplied by the caller, planned by the model, or absent
-    std::vector<int> abc_ids;
-    bool             has_score = cot != YUE2_COT_OFF;
-    if (has_score) {
-        if (!r.abc.empty()) {
-            abc_ids     = encode(r.abc);
-            song->score = r.abc;
-        } else {
-            std::vector<int> open = yue2_build_prompt_ids(encode, cot, r.style, r.lyrics, nullptr);
-            Yue2Generation   plan;
-            if (!yue2_generate(&p->lm, open, {}, 1.0f, r.abc_sampling, r.lm_seed, YUE2_PHASE_ABC, &plan, cancelled,
-                               cancel_data)) {
-                return false;
-            }
-            abc_ids         = plan.tokens;
-            song->score     = bpe_decode(tok, abc_ids);
-            song->truncated = plan.truncated;
+    // Score per song: supplied by the caller, planned by the model, or absent
+    std::vector<std::vector<int>> abc_ids(B);
+    std::vector<std::string>      scores(B);
+    std::vector<bool>             truncated(B, false);
+    bool                          has_score = cot != YUE2_COT_OFF;
+    if (has_score && !r.abc.empty()) {
+        abc_ids.assign(B, encode(r.abc));
+        scores.assign(B, r.abc);
+    } else if (has_score) {
+        std::vector<int>            open = yue2_build_prompt_ids(encode, cot, r.style, r.lyrics, nullptr);
+        std::vector<Yue2Generation> plans;
+        if (!yue2_generate(&p->lm, std::vector<std::vector<int>>(B, open), {}, 1.0f, r.abc_sampling, r.lm_seed,
+                           YUE2_PHASE_ABC, &plans, cancelled, cancel_data)) {
+            return false;
+        }
+        for (int i = 0; i < B; i++) {
+            abc_ids[i]   = plans[i].tokens;
+            scores[i]    = bpe_decode(tok, abc_ids[i]);
+            truncated[i] = plans[i].truncated;
         }
     }
 
-    std::vector<int> prefix = yue2_build_prompt_ids(encode, cot, r.style, r.lyrics, has_score ? &abc_ids : nullptr);
-    fprintf(stderr, "[Prompt] %zu tokens, cot=%s\n", prefix.size(), r.cot.c_str());
+    std::vector<std::vector<int>> prefixes(B);
+    for (int i = 0; i < B; i++) {
+        prefixes[i] = yue2_build_prompt_ids(encode, cot, r.style, r.lyrics, has_score ? &abc_ids[i] : nullptr);
+    }
+    fprintf(stderr, "[Prompt] %zu tokens, cot=%s, songs=%d, variations=%d\n", prefixes[0].size(), r.cot.c_str(), B, M);
 
-    float            guidance = r.cfg_scale < 0.0f ? yue2_default_guidance(cot) : r.cfg_scale;
-    std::vector<int> negative;
+    float                         guidance = r.cfg_scale < 0.0f ? yue2_default_guidance(cot) : r.cfg_scale;
+    std::vector<std::vector<int>> negatives;
     if (guidance != 1.0f) {
-        negative = yue2_build_negative_ids(encode, cot, has_score ? &abc_ids : nullptr);
+        negatives.resize(B);
+        for (int i = 0; i < B; i++) {
+            negatives[i] = yue2_build_negative_ids(encode, cot, has_score ? &abc_ids[i] : nullptr);
+        }
     }
 
-    Yue2Generation codes;
-    bool           replay = !r.semantic_tokens.empty();
+    std::vector<Yue2Generation> codes(B);
     if (replay) {
         std::vector<int> values;
         if (!pipeline_parse_tokens(r.semantic_tokens, &values)) {
             return false;
         }
-        codes.tokens.reserve(values.size());
+        codes[0].tokens.reserve(values.size());
         for (size_t i = 0; i < values.size(); i++) {
-            codes.tokens.push_back(values[i] + YUE2_CODEC_OFFSET);
+            codes[0].tokens.push_back(values[i] + YUE2_CODEC_OFFSET);
         }
-        codes.truncated = false;
-        fprintf(stderr, "[Pipeline] Replay: %zu frames supplied\n", codes.tokens.size());
+        codes[0].truncated = false;
+        fprintf(stderr, "[Pipeline] Replay: %zu frames supplied\n", codes[0].tokens.size());
     } else {
         // The requested length caps the budget of the stage, never raises it
         Yue2Sampling semantic = r.semantic_sampling;
@@ -213,79 +241,103 @@ static bool pipeline_generate(Yue2Pipeline *      p,
                 semantic.min_tokens = semantic.max_tokens;
             }
         }
-        if (!yue2_generate(&p->lm, prefix, negative, guidance, semantic, r.lm_seed, YUE2_PHASE_SEMANTIC, &codes,
+        if (!yue2_generate(&p->lm, prefixes, negatives, guidance, semantic, r.lm_seed, YUE2_PHASE_SEMANTIC, &codes,
                            cancelled, cancel_data)) {
             return false;
         }
     }
-    song->T_lat = (int) codes.tokens.size();
-    if (song->T_lat < 1) {
-        fprintf(stderr, "[Pipeline] FATAL: empty semantic stream\n");
-        return false;
-    }
-    song->truncated = song->truncated || codes.truncated;
 
-    song->tokens.clear();
-    song->tokens.reserve(codes.tokens.size());
-    for (size_t i = 0; i < codes.tokens.size(); i++) {
-        song->tokens.push_back(codes.tokens[i] - YUE2_CODEC_OFFSET);
+    songs->assign((size_t) B * M, {});
+    for (int i = 0; i < B; i++) {
+        int T_lat = (int) codes[i].tokens.size();
+        if (T_lat < 1) {
+            fprintf(stderr, "[Pipeline] FATAL: empty semantic stream\n");
+            return false;
+        }
+        for (int j = 0; j < M; j++) {
+            Yue2Song & song = (*songs)[(size_t) i * M + j];
+            song.score      = scores[i];
+            song.T_lat      = T_lat;
+            song.truncated  = truncated[i] || codes[i].truncated;
+            song.tokens.reserve(codes[i].tokens.size());
+            for (size_t k = 0; k < codes[i].tokens.size(); k++) {
+                song.tokens.push_back(codes[i].tokens[k] - YUE2_CODEC_OFFSET);
+            }
+            // The noise of a variation is drawn once for the whole song, each
+            // chunk taking its view
+            song.latents.assign((size_t) T_lat * YUE2_LATENT_DIM, 0.0f);
+            torch_cpu_randn((uint64_t) (r.seed + j), song.latents.data(), (int64_t) song.latents.size());
+        }
     }
-
-    // The noise of the whole song is drawn once, each chunk taking its view
-    song->latents.assign((size_t) song->T_lat * YUE2_LATENT_DIM, 0.0f);
-    torch_cpu_randn((uint64_t) r.seed, song->latents.data(), (int64_t) song->latents.size());
 
     // Acoustic chunks: the context holds the prefix, the codes of the chunk
     // and their latent block twice over, once as tokens and once as frames
-    const int context    = p->lm.cfg.max_seq_len;
-    const int prefix_len = (int) prefix.size();
-    const int chunk_size = (context - prefix_len - 3) / 2;
-    if (chunk_size < 1) {
-        fprintf(stderr, "[Pipeline] FATAL: prefix %d leaves no acoustic context in %d\n", prefix_len, context);
-        return false;
-    }
-
-    // The forwards below only fill the cache, their logits go nowhere
+    const int          context = p->lm.cfg.max_seq_len;
     std::vector<float> probe((size_t) p->lm.cfg.vocab_size);
-    int                chunks = (song->T_lat + chunk_size - 1) / chunk_size;
-    for (int start = 0; start < song->T_lat; start += chunk_size) {
-        Timer chunk_timer;
-        int   frames = song->T_lat - start < chunk_size ? song->T_lat - start : chunk_size;
-        int   ar_len = prefix_len + frames + 1;
-
-        // One chunk of a generated song already sits in the cache: the end
-        // token completes it. Anything else prefills the chunk sequence.
-        if (!replay && start == 0 && frames == song->T_lat) {
-            int end = YUE2_MUSIC_END;
-            int set = 0;
-            qw3lm_forward_batch(&p->lm, &end, &set, 1, probe.data());
-        } else {
-            std::vector<int> sequence = prefix;
-            sequence.insert(sequence.end(), codes.tokens.begin() + start, codes.tokens.begin() + start + frames);
-            sequence.push_back(YUE2_MUSIC_END);
-            qw3lm_reset_kv(&p->lm, 0);
-            qw3lm_forward(&p->lm, sequence.data(), (int) sequence.size(), 0, probe.data());
-        }
-
-        if (!nar_solve(&p->nar, song->latents.data() + (size_t) start * YUE2_LATENT_DIM, frames, ar_len, r.steps,
-                       cancelled, cancel_data)) {
+    std::vector<float> block;
+    for (int i = 0; i < B; i++) {
+        const int prefix_len = (int) prefixes[i].size();
+        const int chunk_size = (context - prefix_len - 3) / 2;
+        const int T_lat      = (int) codes[i].tokens.size();
+        if (chunk_size < 1) {
+            fprintf(stderr, "[Pipeline] FATAL: prefix %d leaves no acoustic context in %d\n", prefix_len, context);
             return false;
         }
-        fprintf(stderr, "[NAR] Chunk %d/%d: %d frames, prefix %d, %.1f s\n", start / chunk_size + 1, chunks, frames,
-                ar_len, chunk_timer.ms() / 1000.0);
+        int chunks = (T_lat + chunk_size - 1) / chunk_size;
+        for (int start = 0; start < T_lat; start += chunk_size) {
+            Timer chunk_timer;
+            int   frames = T_lat - start < chunk_size ? T_lat - start : chunk_size;
+            int   ar_len = prefix_len + frames + 1;
+
+            // A generated song sits complete in its set when it fits one
+            // chunk. Anything else prefills the chunk sequence, whose logits
+            // go nowhere.
+            if (replay || frames != T_lat) {
+                std::vector<int> sequence = prefixes[i];
+                sequence.insert(sequence.end(), codes[i].tokens.begin() + start,
+                                codes[i].tokens.begin() + start + frames);
+                sequence.push_back(YUE2_MUSIC_END);
+                qw3lm_reset_kv(&p->lm, i);
+                qw3lm_forward(&p->lm, sequence.data(), (int) sequence.size(), i, probe.data());
+            }
+
+            // The M variations of the chunk solve side by side
+            size_t span = (size_t) frames * YUE2_LATENT_DIM;
+            block.resize(span * M);
+            for (int j = 0; j < M; j++) {
+                memcpy(block.data() + span * j,
+                       (*songs)[(size_t) i * M + j].latents.data() + (size_t) start * YUE2_LATENT_DIM,
+                       span * sizeof(float));
+            }
+            if (!nar_solve(&p->nar, block.data(), frames, M, ar_len, i, r.steps, cancelled, cancel_data)) {
+                return false;
+            }
+            for (int j = 0; j < M; j++) {
+                memcpy((*songs)[(size_t) i * M + j].latents.data() + (size_t) start * YUE2_LATENT_DIM,
+                       block.data() + span * j, span * sizeof(float));
+            }
+            fprintf(stderr, "[NAR] Song %d chunk %d/%d: %d frames, prefix %d, %.1f s\n", i, start / chunk_size + 1,
+                    chunks, frames, ar_len, chunk_timer.ms() / 1000.0);
+        }
     }
 
-    int max_T_audio = song->T_lat * YUE2_HOP;
-    song->audio.assign((size_t) 2 * max_T_audio, 0.0f);
-    song->T_audio = vae_ggml_decode_tiled(&p->vae, song->latents.data(), song->T_lat, song->audio.data(), max_T_audio,
-                                          p->params.vae_core, p->params.vae_halo, cancelled, cancel_data);
-    if (song->T_audio < 0) {
-        return false;
+    for (size_t t = 0; t < songs->size(); t++) {
+        Yue2Song & song        = (*songs)[t];
+        int        max_T_audio = song.T_lat * YUE2_HOP;
+        song.audio.assign((size_t) 2 * max_T_audio, 0.0f);
+        song.T_audio = vae_ggml_decode_tiled(&p->vae, song.latents.data(), song.T_lat, song.audio.data(), max_T_audio,
+                                             p->params.vae_core, p->params.vae_halo, cancelled, cancel_data);
+        if (song.T_audio < 0) {
+            return false;
+        }
+        song.audio.resize((size_t) 2 * song.T_audio);
     }
-    song->audio.resize((size_t) 2 * song->T_audio);
 
-    float seconds = (float) song->T_audio / (float) YUE2_SAMPLE_RATE;
-    fprintf(stderr, "[Pipeline] Done: %.1f s of audio in %.1f s (%.1fx realtime)\n", seconds, total_timer.ms() / 1000.0,
-            seconds / (float) (total_timer.ms() / 1000.0));
+    float seconds = 0.0f;
+    for (size_t t = 0; t < songs->size(); t++) {
+        seconds += (float) (*songs)[t].T_audio / (float) YUE2_SAMPLE_RATE;
+    }
+    fprintf(stderr, "[Pipeline] Done: %zu tracks, %.1f s of audio in %.1f s (%.1fx realtime)\n", songs->size(), seconds,
+            total_timer.ms() / 1000.0, seconds / (float) (total_timer.ms() / 1000.0));
     return true;
 }

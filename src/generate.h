@@ -1,9 +1,15 @@
 // generate.h: the two autoregressive stages
 //
-// One stage prefills its prefix into KV set 0 and decodes until the model
-// emits its end token or the budget runs out. The draw is conformant with the
-// reference at equal seed, and both stages restart the generator at the
-// request seed, which the release does on purpose.
+// One stage prefills B prefixes into KV sets 0..B-1 and decodes them in
+// lockstep until each emits its end token or the budget runs out. Sequence i
+// draws with seed + i, so its stream only depends on its own seed, and the
+// draw is conformant with the reference at equal seed. Both stages restart
+// the generator at the request seed, which the release does on purpose.
+//
+// The decode loop leaves every set holding the complete sequence, end token
+// included: a sequence that ends feeds its end token once more, then stays in
+// the batch as a passive row past the rows anyone reads, so the graph shape
+// holds for the whole loop.
 #pragma once
 
 #include "qwen3-lm.h"
@@ -11,6 +17,7 @@
 #include "timer.h"
 
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 struct Yue2Generation {
@@ -18,99 +25,153 @@ struct Yue2Generation {
     bool             truncated;  // the budget ran out before the end token
 };
 
+// Prefill set s with a prefix, or copy the set of an equal prefix already
+// prefilled below it
+static void yue2_prefill(Qwen3LM *                             lm,
+                         const std::vector<std::vector<int>> & prefixes,
+                         int                                   first_set,
+                         int                                   i,
+                         float *                               logits,
+                         int                                   V) {
+    int s = first_set + i;
+    for (int j = 0; j < i; j++) {
+        if (prefixes[j] == prefixes[i]) {
+            qw3lm_copy_kv(lm, first_set + j, s);
+            memcpy(logits + (size_t) s * V, logits + (size_t) (first_set + j) * V, (size_t) V * sizeof(float));
+            return;
+        }
+    }
+    qw3lm_reset_kv(lm, s);
+    qw3lm_forward(lm, prefixes[i].data(), (int) prefixes[i].size(), s, logits + (size_t) s * V);
+}
+
 // Guidance of exactly one keeps a single branch, which is the nominal path in
-// melody and full mode. Anything else prefills the unconditional prefix into
-// KV set 1 and decodes both branches in the same batched forward, the
+// melody and full mode. Anything else prefills the unconditional prefixes into
+// KV sets B..2B-1 and decodes both branches in the same batched forward, the
 // conditional and unconditional logits combining before the distribution.
-static bool yue2_generate(Qwen3LM *                lm,
-                          const std::vector<int> & prefix,
-                          const std::vector<int> & negative,
-                          float                    cfg_scale,
-                          const Yue2Sampling &     s,
-                          int64_t                  seed,
-                          Yue2Phase                phase,
-                          Yue2Generation *         out,
+static bool yue2_generate(Qwen3LM *                             lm,
+                          const std::vector<std::vector<int>> & prefixes,
+                          const std::vector<std::vector<int>> & negatives,
+                          float                                 cfg_scale,
+                          const Yue2Sampling &                  s,
+                          int64_t                               seed,
+                          Yue2Phase                             phase,
+                          std::vector<Yue2Generation> *         out,
                           bool (*cancelled)(void *) = nullptr,
                           void * cancel_data        = nullptr) {
-    bool guided = cfg_scale != 1.0f;
-    if ((int) prefix.size() + s.max_tokens > YUE2_CONTEXT) {
-        fprintf(stderr, "[AR] FATAL: prefix %zu + budget %d exceeds context %d\n", prefix.size(), s.max_tokens,
-                YUE2_CONTEXT);
+    const int B       = (int) prefixes.size();
+    const int context = lm->cfg.max_seq_len;
+    bool      guided  = cfg_scale != 1.0f;
+    if (guided && (int) negatives.size() != B) {
+        fprintf(stderr, "[AR] FATAL: guidance %.3f needs an unconditional prefix per sequence\n", (double) cfg_scale);
         return false;
     }
-    if (guided && negative.empty()) {
-        fprintf(stderr, "[AR] FATAL: guidance %.3f needs an unconditional prefix\n", (double) cfg_scale);
-        return false;
+    // Every set holds its prefix, the budget and the end token
+    for (int i = 0; i < B; i++) {
+        size_t longest = guided && negatives[i].size() > prefixes[i].size() ? negatives[i].size() : prefixes[i].size();
+        if ((int) longest + s.max_tokens + 1 > context) {
+            fprintf(stderr, "[AR] FATAL: prefix %zu + budget %d + end exceeds context %d\n", longest, s.max_tokens,
+                    context);
+            return false;
+        }
     }
-    if (guided && (int) negative.size() + s.max_tokens > YUE2_CONTEXT) {
-        fprintf(stderr, "[AR] FATAL: unconditional prefix %zu + budget %d exceeds context %d\n", negative.size(),
-                s.max_tokens, YUE2_CONTEXT);
-        return false;
-    }
-    if (guided) {
-        qw3lm_kv_sets(lm, 2);
-    }
+
+    const int N = guided ? 2 * B : B;
+    qw3lm_kv_sets(lm, N);
 
     int          V     = lm->cfg.vocab_size;
     int          end   = phase == YUE2_PHASE_ABC ? YUE2_ABC_END : YUE2_MUSIC_END;
     const char * label = phase == YUE2_PHASE_ABC ? "Score" : "Semantic";
     Timer        timer;
 
-    // Logits in KV set order, [cond, uncond], the prefills and the decode
-    // steps writing the same rows
-    int                N          = guided ? 2 : 1;
-    int                kv_sets[2] = { 0, 1 };
+    // Logits in KV set order, [cond 0..B-1, uncond B..2B-1], the prefills and
+    // the decode steps writing the same rows
     std::vector<float> batched((size_t) N * V);
-    float *            cond   = batched.data();
-    float *            uncond = batched.data() + V;
+    std::vector<int>   kv_sets(N);
+    for (int i = 0; i < N; i++) {
+        kv_sets[i] = i;
+    }
 
     Timer prefill_timer;
-    qw3lm_reset_kv(lm, 0);
-    qw3lm_forward(lm, prefix.data(), (int) prefix.size(), 0, cond);
-    if (guided) {
-        qw3lm_reset_kv(lm, 1);
-        qw3lm_forward(lm, negative.data(), (int) negative.size(), 1, uncond);
+    for (int i = 0; i < B; i++) {
+        yue2_prefill(lm, prefixes, 0, i, batched.data(), V);
     }
-    fprintf(stderr, "[AR] %s prefill: %.0f ms, %zu tokens, CFG=%.2f, top_k=%d, budget=%d\n", label, prefill_timer.ms(),
-            prefix.size(), (double) cfg_scale, s.top_k, s.max_tokens);
+    if (guided) {
+        for (int i = 0; i < B; i++) {
+            yue2_prefill(lm, negatives, B, i, batched.data(), V);
+        }
+    }
+    fprintf(stderr, "[AR] %s prefill: %.0f ms, %zu tokens, CFG=%.2f, top_k=%d, budget=%d, sequences=%d\n", label,
+            prefill_timer.ms(), prefixes[0].size(), (double) cfg_scale, s.top_k, s.max_tokens, B);
 
-    out->tokens.clear();
-    out->truncated = true;
+    out->assign((size_t) B, { {}, true });
 
+    // Forwards a sequence still owes once it stops drawing: one for its end
+    // token, two when the budget cut it on a content token. Negative while
+    // it draws, zero once sealed.
+    std::vector<int>           owed(B, -1);
+    std::vector<int>           tokens(N);
     std::vector<float>         mixed(guided ? (size_t) V : 0);
     std::vector<Yue2Candidate> candidates;
-    for (int step = 0; step < s.max_tokens; step++) {
+    int                        step = 0;
+    for (;; step++) {
         if (cancelled && cancelled(cancel_data)) {
             fprintf(stderr, "[AR] Cancelled at step %d\n", step);
             return false;
         }
-        const float * logits = cond;
-        if (guided) {
-            for (int i = 0; i < V; i++) {
-                mixed[(size_t) i] = uncond[i] + cfg_scale * (cond[i] - uncond[i]);
+        bool pending = false;
+        for (int i = 0; i < B; i++) {
+            Yue2Generation & g = (*out)[i];
+            if (owed[i] < 0) {
+                const float * cond   = batched.data() + (size_t) i * V;
+                const float * logits = cond;
+                if (guided) {
+                    const float * uncond = batched.data() + (size_t) (B + i) * V;
+                    for (int k = 0; k < V; k++) {
+                        mixed[k] = uncond[k] + cfg_scale * (cond[k] - uncond[k]);
+                    }
+                    logits = mixed.data();
+                }
+                yue2_distribution(logits, s, g.tokens, step, phase, candidates);
+                int token = yue2_draw(candidates, seed + i, step);
+                tokens[i] = token;
+                if (token == end) {
+                    g.truncated = false;
+                    owed[i]     = 1;
+                    fprintf(stderr, "[AR] %s %d: end token at step %d\n", label, i, step);
+                } else {
+                    g.tokens.push_back(token);
+                    if ((int) g.tokens.size() >= s.max_tokens) {
+                        owed[i] = 2;
+                    }
+                }
+            } else {
+                tokens[i] = end;
             }
-            logits = mixed.data();
+            if (guided) {
+                tokens[B + i] = tokens[i];
+            }
+            pending = pending || owed[i] != 0;
         }
-        yue2_distribution(logits, s, out->tokens, step, phase, candidates);
-        int token = yue2_draw(candidates, seed, step);
-        if (token == end) {
-            out->truncated = false;
-            fprintf(stderr, "[AR] %s: end token at step %d\n", label, step);
+        if (!pending) {
             break;
         }
-        out->tokens.push_back(token);
         if ((step % 100) == 0) {
             fprintf(stderr, "[AR] %s %d/%d\n", label, step, s.max_tokens);
         }
-        if (step + 1 >= s.max_tokens) {
-            continue;
+        qw3lm_forward_batch(lm, tokens.data(), kv_sets.data(), N, batched.data());
+        for (int i = 0; i < B; i++) {
+            if (owed[i] > 0) {
+                owed[i]--;
+            }
         }
-        int tokens[2] = { token, token };
-        qw3lm_forward_batch(lm, tokens, kv_sets, N, batched.data());
     }
 
-    int n = (int) out->tokens.size();
-    fprintf(stderr, "[AR] %s: %d tokens%s, %.1f s (%.1f ms/token)\n", label, n, out->truncated ? " (truncated)" : "",
-            timer.ms() / 1000.0, n > 0 ? timer.ms() / n : 0.0);
+    size_t total = 0;
+    for (int i = 0; i < B; i++) {
+        total += (*out)[i].tokens.size();
+    }
+    fprintf(stderr, "[AR] %s: %zu tokens over %d sequences, %d steps, %.1f s (%.1f ms/step)\n", label, total, B, step,
+            timer.ms() / 1000.0, step > 0 ? timer.ms() / step : 0.0);
     return true;
 }

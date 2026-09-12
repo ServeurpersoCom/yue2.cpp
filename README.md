@@ -87,8 +87,9 @@ play and download tracks.
 
 Both GGUF are resident for the whole session: the backbone carries the
 autoregressive and the non-autoregressive weight sets in one file, and
-the KV cache sized on the 24576 token context dominates the residency.
-`--max-seq` is the lever that trades context for VRAM.
+the KV cache sized on the 24576 token context dominates the residency,
+one set per song of a batch. `--max-seq` and `--max-batch` are the levers
+that trade context and batch for VRAM.
 
 ## Server options
 
@@ -102,6 +103,7 @@ Required:
 Optional:
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
+  --max-batch <N>        Song batch limit, one KV set each (default: 1)
 
 Debug:
   --max-seq <N>          KV cache size (default: model context)
@@ -121,9 +123,11 @@ ID immediately. The single worker thread owns the models and processes
 jobs in FIFO order.
 
 **GET /job?id=N** - Poll job status. **GET /job?id=N&result=1** fetches the
-result as multipart/mixed: one JSON replay request part (the request
-carrying the semantic stream, the score and the resolved seed) then the
-audio part (MP3 or WAV, selected by `output_format` in the request).
+result as multipart/mixed, one pair per track: a JSON replay request part
+(the request carrying the semantic stream, the score and the seeds of the
+track) then the audio part (MP3 or WAV, selected by `output_format` in the
+request). `lm_batch_size` songs times `synth_batch_size` noise variations
+come out song-major.
 **POST /job?id=N&cancel=1** cancels a running job.
 
 **GET /health** - Returns `{"status":"ok"}`.

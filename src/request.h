@@ -35,6 +35,15 @@ struct Yue2Request {
     int64_t seed;     // -1 = random
     int     steps;    // 32, midpoint steps of the flow matching ODE
 
+    // batching: number of songs generated from this prompt. Song i draws
+    // its tokens with lm_seed + i, the mm3 convention of consecutive seeds.
+    int lm_batch_size;  // 1
+
+    // number of flow matching variations per song, consecutive noise seeds
+    // (seed + j) on the same semantic stream. Output order is song-major:
+    // song * synth_batch_size + variation.
+    int synth_batch_size;  // 1
+
     // sampling of each autoregressive stage, the checkpoint presets by default
     Yue2Sampling abc_sampling;
     Yue2Sampling semantic_sampling;
@@ -76,3 +85,11 @@ std::string request_to_json(const Yue2Request * r, bool sparse = true);
 
 // resolves a negative seed to a random positive one
 void request_resolve_seed(Yue2Request * r);
+
+// the request that renders one track of a batch again without the
+// autoregression: its score, its semantic stream and the two seeds it consumed
+Yue2Request request_replay(const Yue2Request & base,
+                           const std::string & abc,
+                           const std::string & tokens,
+                           int                 song,
+                           int                 variation);

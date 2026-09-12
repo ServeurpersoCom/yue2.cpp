@@ -11,6 +11,24 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
+
+// song.mp3 -> song12.mp3 for song 1, variation 2
+static std::string indexed(const std::string & path, int song, int variation) {
+    std::string idx = std::to_string(song) + std::to_string(variation);
+    size_t      dot = path.rfind('.');
+    return dot != std::string::npos ? path.substr(0, dot) + idx + path.substr(dot) : path + idx;
+}
+
+static bool write_file(const std::string & path, const void * data, size_t bytes) {
+    FILE * f = fopen(path.c_str(), "wb");
+    if (!f || fwrite(data, 1, bytes, f) != bytes) {
+        fprintf(stderr, "[Synth] FATAL: cannot write %s\n", path.c_str());
+        return false;
+    }
+    fclose(f);
+    return true;
+}
 
 static void print_usage(const char * prog) {
     fprintf(stderr, "yue2.cpp %s\n\n", YUE2_VERSION);
@@ -23,7 +41,7 @@ static void print_usage(const char * prog) {
             "  --request <json>       Input request JSON\n"
             "\n"
             "Optional:\n"
-            "  --out <path>           Output audio (default: song.mp3)\n"
+            "  --out <path>           Output audio (default: song.mp3), a batch numbers it\n"
             "  --duration <s>         Target length in seconds\n"
             "  --lm-seed <N>          Token sampling seed\n"
             "  --seed <N>             Acoustic noise seed\n"
@@ -132,48 +150,56 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    Yue2Song song;
-    if (!pipeline_generate(&pipeline, r, &song)) {
+    std::vector<Yue2Song> songs;
+    if (!pipeline_generate(&pipeline, r, &songs)) {
         pipeline_free(&pipeline);
         return 1;
     }
     pipeline_free(&pipeline);
 
-    if (tokens_path) {
-        std::string csv;
-        for (size_t i = 0; i < song.tokens.size(); i++) {
-            csv += (i ? "," : "") + std::to_string(song.tokens[i]);
-        }
-        FILE * f = fopen(tokens_path, "wb");
-        if (f) {
-            fwrite(csv.data(), 1, csv.size(), f);
-            fputc('\n', f);
-            fclose(f);
-        }
-    }
+    // A single track lands on the paths as given; a batch numbers each path
+    // with song then variation index: song.mp3 -> song00.mp3. Every track
+    // gets its replay request next to it (.json), carrying the score, the
+    // semantic stream and the exact seeds of that track.
+    const int M = r.synth_batch_size;
+    for (size_t t = 0; t < songs.size(); t++) {
+        Yue2Song &  song = songs[t];
+        int         i    = (int) t / M;
+        int         j    = (int) t % M;
+        std::string path = songs.size() > 1 ? indexed(target, i, j) : target;
 
-    if (latent_path) {
-        FILE * f = fopen(latent_path, "wb");
-        if (f) {
-            fwrite(song.latents.data(), sizeof(float), song.latents.size(), f);
-            fclose(f);
+        if (tokens_path) {
+            std::string csv = pipeline_format_tokens(song.tokens) + "\n";
+            if (!write_file(songs.size() > 1 ? indexed(tokens_path, i, j) : tokens_path, csv.data(), csv.size())) {
+                return 1;
+            }
         }
-    }
-
-    if (score_path && !song.score.empty()) {
-        FILE * f = fopen(score_path, "wb");
-        if (f) {
-            fwrite(song.score.data(), 1, song.score.size(), f);
-            fclose(f);
+        if (latent_path && !write_file(songs.size() > 1 ? indexed(latent_path, i, j) : latent_path, song.latents.data(),
+                                       song.latents.size() * sizeof(float))) {
+            return 1;
         }
-    }
+        if (score_path && !song.score.empty() &&
+            !write_file(songs.size() > 1 ? indexed(score_path, i, j) : score_path, song.score.data(),
+                        song.score.size())) {
+            return 1;
+        }
 
-    if (!audio_write(target.c_str(), song.audio.data(), song.T_audio, YUE2_SAMPLE_RATE, is_mp3, wav_fmt, r.mp3_bitrate,
-                     r.peak_clip)) {
-        return 1;
-    }
+        if (!audio_write(path.c_str(), song.audio.data(), song.T_audio, YUE2_SAMPLE_RATE, is_mp3, wav_fmt,
+                         r.mp3_bitrate, r.peak_clip)) {
+            return 1;
+        }
 
-    fprintf(stderr, "[Synth] Done: %.1f s of audio, seeds %lld and %lld -> %s\n",
-            (float) song.T_audio / (float) YUE2_SAMPLE_RATE, (long long) r.lm_seed, (long long) r.seed, target.c_str());
+        Yue2Request replay =
+            request_replay(r, song.score.empty() ? r.abc : song.score, pipeline_format_tokens(song.tokens), i, j);
+        std::string json = request_to_json(&replay) + "\n";
+        size_t      dot  = path.rfind('.');
+        if (!write_file((dot != std::string::npos ? path.substr(0, dot) : path) + ".json", json.data(), json.size())) {
+            return 1;
+        }
+
+        fprintf(stderr, "[Synth] Done: %.1f s of audio, seeds %lld and %lld -> %s\n",
+                (float) song.T_audio / (float) YUE2_SAMPLE_RATE, (long long) replay.lm_seed, (long long) replay.seed,
+                path.c_str());
+    }
     return 0;
 }

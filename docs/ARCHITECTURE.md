@@ -125,8 +125,9 @@ CUDA with the native BF16 backbone:
 
 The KV cache is the dominant term and the only one that scales with a
 knob: `2 * 28 * 2 * 128 * 8 * max_seq * 2` bytes, so 2688 MB per set at
-the full context. Two sets exist because classifier free guidance needs a
-second stream; `--max-seq` is the lever that trades context for VRAM.
+the full context. One set per song of the batch, two under classifier
+free guidance, grown on demand; `--max-seq` and `--max-batch` are the
+levers that trade context and batch for VRAM.
 
 ## Pipeline
 
@@ -163,9 +164,12 @@ routing.
 theta 1e6, context 24576, untied lm_head, vocab 184704 (text, ABC, control
 and 32768 semantic codes).
 
-`src/qwen3-lm.h` builds the autoregressive half: prefill, single token
-decode, and a batched decode of two streams over two KV sets for guidance.
-`src/nar.h` builds the other half plus the flow matching heads.
+`src/qwen3-lm.h` builds the autoregressive half: a prefill of one
+sequence into one KV set, and a batched decode of N sequences over N
+consecutive sets, which is the one decode path (N=1 for a single unguided
+song, 2N under guidance, one set per song of a batch). `src/nar.h` builds
+the other half plus the flow matching heads, and solves the M noise
+variations of a song in one graph over the set the AR left complete.
 
 ### Flow matching heads
 
@@ -384,6 +388,8 @@ the server rejects a request with neither.
     "lm_seed":         -1,
     "seed":            -1,
     "steps":           32,
+    "lm_batch_size":   1,
+    "synth_batch_size": 1,
     "cfg_scale":       -1.0,
     "semantic_tokens": "",
     "peak_clip":       10,
@@ -429,6 +435,19 @@ the job starts and returned with the track, so a replay reproduces it.
 
 **`steps`** (int, default `32`)
 Midpoint steps of the flow matching ODE. Minimum 1.
+
+**`lm_batch_size`** (int, default `1`)
+Songs generated from the prompt. Song `i` draws its score and its semantic
+stream with `lm_seed + i` in its own KV set, the batch decoding in
+lockstep; a song that ends stays in the batch as a passive row. Bounded by
+`--max-batch` on the server. Ignored when `semantic_tokens` is supplied.
+
+**`synth_batch_size`** (int, default `1`, server bound `9`)
+Flow matching variations per song, variation `j` drawing its noise with
+`seed + j` on the same semantic stream, the variations of a song solved
+side by side in one NAR graph. Tracks come out song-major: track
+`song * synth_batch_size + variation`, each with its own replay request
+carrying the exact seeds it consumed and both counters reset to 1.
 
 **`cfg_scale`** (float, default `-1` = protocol)
 Classifier free guidance on the semantic stage. Negative applies the
@@ -499,7 +518,7 @@ Required:
   --request <json>       Input request JSON
 
 Optional:
-  --out <path>           Output audio (default: song.mp3)
+  --out <path>           Output audio (default: song.mp3), a batch numbers it
   --duration <s>         Target length in seconds
   --lm-seed <N>          Token sampling seed
   --seed <N>             Acoustic noise seed
@@ -515,6 +534,10 @@ Debug:
   --no-fa                Disable flash attention
   --clamp-fp16           Clamp hidden states to FP16 range
 ```
+
+A batch numbers every output path with song then variation index,
+`song.mp3` becoming `song00.mp3`, `song01.mp3`, and every track gets its
+replay request next to it as `.json`.
 
 The content of a song lives in the request and nowhere else: style, lyrics,
 score, codes, sampling presets. The flags above only carry what a scripted
@@ -536,6 +559,7 @@ Required:
 Optional:
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
+  --max-batch <N>        Song batch limit, one KV set each (default: 1)
 
 Debug:
   --max-seq <N>          KV cache size (default: model context)
@@ -556,16 +580,18 @@ POST /synth                     Submit a generation job, returns job ID
   body: application/json Yue2Request
   response: {"id":"1a2b..."}
   400 on malformed JSON, unknown cot mode, unknown output_format,
-  steps < 1, a sampling preset outside the protocol bounds, or a request
-  with neither style nor lyrics
+  steps < 1, lm_batch_size outside [1, --max-batch], synth_batch_size
+  outside [1, 9], a sampling preset outside the protocol bounds, or a
+  request with neither style nor lyrics
 
 GET  /job?id=N                  Poll job status
   response: {"status":"running|done|failed|cancelled"}
 
 GET  /job?id=N&result=1         Fetch job result
-  multipart/mixed, boundary yue2-batch-boundary: one application/json
-  replay request part (the request carrying the semantic stream, the
-  score and the resolved seed) then one audio/mpeg or audio/wav part
+  multipart/mixed, boundary yue2-batch-boundary: per track, song-major,
+  one application/json replay request part (the request carrying the
+  semantic stream, the score and the seeds of that track) then one
+  audio/mpeg or audio/wav part
   404 while the result is not ready
 
 POST /job?id=N&cancel=1         Cancel a specific job
@@ -702,10 +728,14 @@ Twelve cases, all green on CUDA0 and CPU:
 |------|-----------|---------------|-------------|
 | vae (T=64) | 1e-2 | 2.098e-3 | 6.182e-4 |
 | vae-tiled (T=200, core 64) | 1e-2 | 2.216e-3 | 7.142e-4 |
-| lm-prefill | 2e-2 + argmax | 1.569e-3 | 2.191e-3 |
-| lm-decode | 2e-2 + argmax | 1.173e-3 | 2.060e-3 |
+| lm-prefill-0 | 2e-2 + argmax | 1.569e-3 | 2.191e-3 |
+| lm-decode-0 (batch of 2, mixed cache lengths) | 2e-2 + argmax | 1.166e-3 | 2.060e-3 |
+| lm-prefill-1 | 2e-2 + argmax | 3.294e-3 | 2.239e-3 |
+| lm-decode-1 (batch of 2, mixed cache lengths) | 2e-2 + argmax | 2.948e-3 | 1.335e-3 |
 | nar (single velocity) | 5e-2 | 8.542e-3 | 8.595e-3 |
 | nar-ode (8 midpoint steps) | 5e-2 | 1.552e-3 | 1.448e-3 |
+| nar-batch (3 variations, one graph) | 5e-2 | 7.582e-3 | 8.358e-3 |
+| nar-ode-batch (2 variations, 8 steps) | 5e-2 | 2.117e-3 | 2.211e-3 |
 | bpe | 0 (exact) | 0 | 0 |
 | sampling-abc | 1e-4 | 1.138e-8 | 1.138e-8 |
 | sampling-semantic | 1e-4 | 5.327e-8 | 5.327e-8 |

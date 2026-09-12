@@ -2,8 +2,10 @@
 //
 // Prefills the AR prefix into KV set 0, then either evaluates the flow
 // matching field once at a given raw timestep, or solves the whole ODE from
-// the dumped state. Writes raw f32 [T_lat, latent_dim] for comparison against
-// the torch reference. The FP16 clamp flag runs both halves clamped.
+// the dumped state. The state holds M variations of [T_lat, latent_dim],
+// which the graph evaluates side by side. Writes raw f32 in the same layout
+// for comparison against the torch reference. The FP16 clamp flag runs both
+// halves clamped.
 
 #include "nar.h"
 
@@ -23,11 +25,11 @@ static bool read_all(const char * path, void * dst, size_t bytes) {
 }
 
 int main(int argc, char ** argv) {
-    if (argc != 8 && !(argc == 9 && strcmp(argv[8], "--clamp-fp16") == 0)) {
-        fprintf(stderr, "usage: %s backbone.gguf ar_ids.bin x_t.bin T_lat velocity raw_t out.bin [--clamp-fp16]\n",
-                argv[0]);
-        fprintf(stderr, "       %s backbone.gguf ar_ids.bin x_t.bin T_lat solve steps out.bin [--clamp-fp16]\n",
-                argv[0]);
+    if (argc != 9 && !(argc == 10 && strcmp(argv[9], "--clamp-fp16") == 0)) {
+        fprintf(stderr,
+                "usage: %s backbone.gguf ar_ids.bin x_t.bin T_lat M velocity raw_t out.bin [--clamp-fp16]\n"
+                "       %s backbone.gguf ar_ids.bin x_t.bin T_lat M solve steps out.bin [--clamp-fp16]\n",
+                argv[0], argv[0]);
         return 1;
     }
 
@@ -35,19 +37,20 @@ int main(int argc, char ** argv) {
     const char * ids_path  = argv[2];
     const char * xt_path   = argv[3];
     int          T_lat     = atoi(argv[4]);
-    const char * mode      = argv[5];
-    const char * out_path  = argv[7];
-    bool         clamp     = argc == 9;
+    int          M         = atoi(argv[5]);
+    const char * mode      = argv[6];
+    const char * out_path  = argv[8];
+    bool         clamp     = argc == 10;
 
     bool solve = strcmp(mode, "solve") == 0;
     if (!solve && strcmp(mode, "velocity") != 0) {
         fprintf(stderr, "[Test-NAR] mode must be velocity or solve\n");
         return 1;
     }
-    float raw_t = solve ? 0.0f : (float) atof(argv[6]);
-    int   steps = solve ? atoi(argv[6]) : 0;
-    if (T_lat < 1 || (solve && steps < 1)) {
-        fprintf(stderr, "[Test-NAR] T_lat and steps must be positive\n");
+    float raw_t = solve ? 0.0f : (float) atof(argv[7]);
+    int   steps = solve ? atoi(argv[7]) : 0;
+    if (T_lat < 1 || M < 1 || (solve && steps < 1)) {
+        fprintf(stderr, "[Test-NAR] T_lat, M and steps must be positive\n");
         return 1;
     }
 
@@ -82,7 +85,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    std::vector<float> x_t((size_t) nar.latent_dim * T_lat);
+    std::vector<float> x_t((size_t) nar.latent_dim * T_lat * M);
     if (!read_all(xt_path, x_t.data(), x_t.size() * sizeof(float))) {
         nar_free(&nar);
         qw3lm_free(&lm);
@@ -97,9 +100,9 @@ int main(int argc, char ** argv) {
     bool               ok;
     if (solve) {
         result = x_t;
-        ok     = nar_solve(&nar, result.data(), T_lat, ar_len, steps);
+        ok     = nar_solve(&nar, result.data(), T_lat, M, ar_len, 0, steps);
     } else {
-        ok = nar_velocity(&nar, x_t.data(), T_lat, ar_len, raw_t, result.data());
+        ok = nar_velocity(&nar, x_t.data(), T_lat, M, ar_len, 0, raw_t, result.data());
     }
     if (!ok) {
         nar_free(&nar);
@@ -119,9 +122,9 @@ int main(int argc, char ** argv) {
     nar_free(&nar);
     qw3lm_free(&lm);
     if (solve) {
-        fprintf(stderr, "[Test-NAR] Prefix %d tokens, T_lat=%d, %d midpoint steps\n", ar_len, T_lat, steps);
+        fprintf(stderr, "[Test-NAR] Prefix %d tokens, T_lat=%d, M=%d, %d midpoint steps\n", ar_len, T_lat, M, steps);
     } else {
-        fprintf(stderr, "[Test-NAR] Prefix %d tokens, T_lat=%d, raw_t=%.4f\n", ar_len, T_lat, raw_t);
+        fprintf(stderr, "[Test-NAR] Prefix %d tokens, T_lat=%d, M=%d, raw_t=%.4f\n", ar_len, T_lat, M, raw_t);
     }
     return 0;
 }
