@@ -21,6 +21,8 @@ export interface Yue2Request {
 	lm_seed?: number;
 	seed?: number;
 	steps?: number;
+	lm_batch_size?: number;
+	synth_batch_size?: number;
 	cfg_scale?: number;
 	semantic_tokens?: string;
 	abc_sampling: Yue2Sampling;

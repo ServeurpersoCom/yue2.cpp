@@ -26,6 +26,7 @@ export const FIELDS: readonly FieldDef[] = [
 	// lm: what the autoregressive half is asked to write
 	{ key: 'cot', section: 'lm', type: 'str' },
 	{ key: 'duration', section: 'lm', type: 'num' },
+	{ key: 'lm_batch_size', section: 'lm', type: 'num' },
 	{ key: 'lm_seed', section: 'lm', type: 'num' },
 
 	// semantic: the token stage, its guidance, its sampling and its codes
@@ -34,6 +35,7 @@ export const FIELDS: readonly FieldDef[] = [
 
 	// flow: the acoustic solver
 	{ key: 'steps', section: 'flow', type: 'num' },
+	{ key: 'synth_batch_size', section: 'flow', type: 'num' },
 	{ key: 'seed', section: 'flow', type: 'num' },
 
 	// post: output normalization and encoding

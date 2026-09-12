@@ -310,6 +310,14 @@
 			/></label
 		>
 		<label
+			>LM batch <input
+				type="text"
+				placeholder={ph(d?.lm_batch_size)}
+				bind:value={app.request.lm_batch_size}
+				title="Songs drawn from this prompt, each with its own score and codes, seeds LM seed + index."
+			/></label
+		>
+		<label
 			>LM seed <input
 				type="text"
 				placeholder={ph(d?.lm_seed)}
@@ -486,6 +494,14 @@
 						placeholder={ph(d?.steps)}
 						bind:value={app.request.steps}
 						title="Midpoint steps of the acoustic ODE."
+					/></label
+				>
+				<label
+					>Batch <input
+						type="text"
+						placeholder={ph(d?.synth_batch_size)}
+						bind:value={app.request.synth_batch_size}
+						title="Noise variations per song on the same codes, seeds noise seed + index, 9 at most."
 					/></label
 				>
 				<label
