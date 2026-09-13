@@ -13,6 +13,7 @@
 // reference does, the global response norm of the frontend spans the whole
 // window and would move with the padding otherwise.
 
+#include "audio-io.h"
 #include "backend.h"
 #include "debug.h"
 #include "gguf-weights.h"
@@ -22,6 +23,7 @@
 #include "weight-ctx.h"
 #include "yyjson.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -96,8 +98,10 @@ struct SheetSage2 {
     SS2Tokenizer tok;
 
     // Mel frontend tables on the host: Hann window, mel filterbank
-    // [n_fft / 2 + 1, n_mels], per bin mean and std
+    // [n_fft / 2 + 1, n_mels] with the nonzero row span of every bin, per
+    // bin mean and std
     std::vector<float> window, mel_fb, mel_mean, mel_std;
+    std::vector<int>   mel_lo, mel_hi;
 
     SS2SubBlock sub[SS2_MAX_SUB];
     SS2Layer    layers[SS2_MAX_LAYERS];
@@ -378,6 +382,17 @@ static bool ss2_load(SheetSage2 * m, const char * gguf_path) {
     ss2_host_table(gf, "encoder.feature_extractor.mel_scale.fb", &m->mel_fb, (size_t) (c.n_fft / 2 + 1) * c.n_mels);
     ss2_host_table(gf, "encoder.feature_extractor.mel_mean", &m->mel_mean, (size_t) c.n_mels);
     ss2_host_table(gf, "encoder.feature_extractor.mel_std", &m->mel_std, (size_t) c.n_mels);
+    for (int k = 0; k < c.n_mels; k++) {
+        int lo = c.n_fft / 2 + 1, hi = 0;
+        for (int b = 0; b < c.n_fft / 2 + 1; b++) {
+            if (m->mel_fb[(size_t) b * c.n_mels + k] != 0.0f) {
+                lo = std::min(lo, b);
+                hi = std::max(hi, b + 1);
+            }
+        }
+        m->mel_lo.push_back(lo);
+        m->mel_hi.push_back(hi);
+    }
 
     int n_sub = 0;
     for (int i = 0; i < SS2_MAX_SUB; i++) {
@@ -500,7 +515,7 @@ static void ss2_mel(const SheetSage2 * m, const float * audio, int n_samples, st
         float * row = mel->data() + (size_t) f * c.n_mels;
         for (int k = 0; k < c.n_mels; k++) {
             double acc = 0.0;
-            for (int b = 0; b < bins; b++) {
+            for (int b = m->mel_lo[(size_t) k]; b < m->mel_hi[(size_t) k]; b++) {
                 acc += (double) power[b] * m->mel_fb[(size_t) b * c.n_mels + k];
             }
             float db = 10.0f * log10f(fmaxf((float) acc, 1e-10f));
@@ -1097,13 +1112,15 @@ static bool ss2_grammar_update(const SS2Tokenizer & t, SS2Grammar & g, int token
     return false;
 }
 
-// Greedy generation of one window: the prefix (sos, the task prompts, out)
-// is fed, then every step draws the best allowed token until the stream
-// ends or the budget runs out. Returns the whole token sequence, prefix
-// included.
+// Greedy generation of one window: the prefix (sos, the task prompts, out,
+// and the re-encoded events of the overlap on a later window) is fed, the
+// grammar advanced through its events, then every step draws the best
+// allowed token until the stream ends, a timestamp reaches stop_time, or
+// the budget runs out. The sequence always ends with eos.
 static bool ss2_generate(SheetSage2 *             m,
                          SS2Decoder *             d,
                          const std::vector<int> & prefix,
+                         double                   stop_time,
                          std::vector<int> *       tokens,
                          const DebugDumper *      dbg) {
     const SS2Config &    c = m->cfg;
@@ -1118,7 +1135,14 @@ static bool ss2_generate(SheetSage2 *             m,
         }
     }
     SS2Grammar g;
-    int        token = prefix.back();
+    size_t     out_index = 0;
+    while (out_index < prefix.size() && prefix[out_index] != t.out) {
+        out_index++;
+    }
+    for (size_t i = out_index + 1; i < prefix.size(); i++) {
+        ss2_grammar_update(t, g, prefix[i]);
+    }
+    int token = prefix.back();
     for (int step = 0; (int) tokens->size() < c.max_out; step++) {
         if (!ss2_decode_step(m, d, token, logits.data())) {
             return false;
@@ -1142,9 +1166,17 @@ static bool ss2_generate(SheetSage2 *             m,
         if (ss2_grammar_update(t, g, token)) {
             break;
         }
+        if (stop_time >= 0 && ss2_kind(t, token) == SS2_KIND_TIME &&
+            (double) (token - t.time0) / c.time_hz >= stop_time) {
+            tokens->push_back(t.eos);
+            break;
+        }
         if ((step % 100) == 0) {
             fprintf(stderr, "[SheetSage] Decoding %d/%d\n", step, c.max_out);
         }
+    }
+    if (tokens->back() != t.eos) {
+        tokens->push_back(t.eos);
     }
     fprintf(stderr, "[SheetSage] Decoded: %zu tokens, %.1f s (%.1f ms/token)\n", tokens->size(), timer.ms() / 1000.0,
             timer.ms() / (double) tokens->size());
@@ -1156,11 +1188,16 @@ static bool ss2_generate(SheetSage2 *             m,
 // grammar imposes, the timestamps anchor a step to seconds map that places
 // every event and every note end, then the events are offset by the window
 // start and clipped to the song like the reference stitching does.
+enum SS2FieldIndex { SS2_F_TIMESTAMP, SS2_F_RHYTHM, SS2_F_STRUCTURE, SS2_F_KEY, SS2_F_CHORD, SS2_F_MELODY };
+
 static bool ss2_decode_events(const SS2Config &        c,
                               const SS2Tokenizer &     t,
                               const std::vector<int> & tokens,
                               double                   window_start,
+                              double                   accept_start,
+                              double                   accept_end,
                               double                   song_duration,
+                              int                      base_subbeat,
                               std::vector<NotEvent> *  events) {
     events->clear();
     size_t out_index = 0;
@@ -1197,33 +1234,42 @@ static bool ss2_decode_events(const SS2Config &        c,
                 case SS2_KIND_TIME:
                     e.has_timestamp = true;
                     stamp           = (double) (token - t.time0) / c.time_hz;
+                    e.field_tokens[SS2_F_TIMESTAMP].push_back(token);
                     break;
                 case SS2_KIND_METER:
                     e.has_meter = true;
                     e.meter_num = t.meter_num[(size_t) (token - t.meter0)];
                     e.meter_den = t.meter_den[(size_t) (token - t.meter0)];
+                    e.field_tokens[SS2_F_RHYTHM].push_back(token);
                     break;
                 case SS2_KIND_EIGHTH:
                     e.eighth = token - t.eighth0;
+                    e.field_tokens[SS2_F_RHYTHM].push_back(token);
                     break;
                 case SS2_KIND_STRUCTURE:
                     e.structure = t.structures[(size_t) (token - t.structure0)];
+                    e.field_tokens[SS2_F_STRUCTURE].push_back(token);
                     break;
                 case SS2_KIND_KEY:
                     e.key = t.keys[(size_t) (token - t.key0)];
+                    e.field_tokens[SS2_F_KEY].push_back(token);
                     break;
                 case SS2_KIND_MAJMIN:
                     e.chord = t.majmin_chords[(size_t) (token - t.majmin0)];
+                    e.field_tokens[SS2_F_CHORD].push_back(token);
                     break;
                 case SS2_KIND_CHORD:
                     e.chord = t.chords[(size_t) (token - t.chord0)];
+                    e.field_tokens[SS2_F_CHORD].push_back(token);
                     break;
                 case SS2_KIND_PITCH:
                     {
                         int pitch_id = token - t.pitch0;
                         int bin      = 0;
+                        e.field_tokens[SS2_F_MELODY].push_back(token);
                         if (position + 1 < tokens.size() && ss2_kind(t, tokens[position + 1]) == SS2_KIND_DURATION) {
                             bin = tokens[position + 1] - t.duration0;
+                            e.field_tokens[SS2_F_MELODY].push_back(tokens[position + 1]);
                             position++;
                         }
                         e.melody.push_back(
@@ -1288,19 +1334,240 @@ static bool ss2_decode_events(const SS2Config &        c,
     std::vector<NotEvent> accepted;
     for (NotEvent & e : *events) {
         double abs_time = window_start + lookup(e.subbeat);
-        if (abs_time >= song_duration - 1e-4) {
+        if (abs_time < accept_start - 1e-4 || abs_time >= accept_end - 1e-4 || abs_time >= song_duration - 1e-4) {
             continue;
         }
-        e.time = std::min(song_duration, std::max(0.0, abs_time));
+        e.time           = std::min(song_duration, std::max(0.0, abs_time));
+        e.global_subbeat = base_subbeat + e.subbeat;
         for (NotNote & n : e.melody) {
             double end = window_start + lookup(e.subbeat + n.duration_steps);
             n.end_time = std::min(song_duration, std::max(e.time + 0.04, end));
         }
         accepted.push_back(e);
     }
-    std::stable_sort(accepted.begin(), accepted.end(), [](const NotEvent & a, const NotEvent & b) {
-        return std::tie(a.time, a.subbeat) < std::tie(b.time, b.subbeat);
-    });
     *events = accepted;
+    return true;
+}
+
+// The prefix of a later window: the stitched events between the window
+// start and the accepted end, re-encoded with local timestamps and steps,
+// the first one completed with the structure, key, chord and meter in force
+// before it, so the decoder continues a stream it has already seen.
+static std::vector<int> ss2_overlap_prefix(const SS2Tokenizer &          t,
+                                           const std::vector<int> &      task_prefix,
+                                           const std::vector<NotEvent> & stitched,
+                                           double                        window_start,
+                                           double                        prefix_end,
+                                           int *                         base_subbeat) {
+    std::vector<const NotEvent *> source;
+    for (const NotEvent & e : stitched) {
+        if (e.time >= window_start - 1e-4 && e.time < prefix_end - 1e-4) {
+            source.push_back(&e);
+        }
+    }
+    std::stable_sort(source.begin(), source.end(), [](const NotEvent * a, const NotEvent * b) {
+        return std::tie(a->global_subbeat, a->time) < std::tie(b->global_subbeat, b->time);
+    });
+    size_t first = 0;
+    while (first < source.size() && !source[first]->has_timestamp &&
+           source[first]->field_tokens[SS2_F_RHYTHM].empty()) {
+        first++;
+    }
+    if (first == source.size()) {
+        return {};
+    }
+    source.erase(source.begin(), source.begin() + (long) first);
+    *base_subbeat = source[0]->global_subbeat;
+
+    // The context in force before the first prefix event
+    std::vector<int> context[6];
+    for (const NotEvent & e : stitched) {
+        if (e.time > source[0]->time + 1e-6) {
+            continue;
+        }
+        for (int f : { SS2_F_STRUCTURE, SS2_F_KEY, SS2_F_CHORD }) {
+            if (!e.field_tokens[f].empty()) {
+                context[f] = e.field_tokens[f];
+            }
+        }
+        for (int token : e.field_tokens[SS2_F_RHYTHM]) {
+            if (ss2_kind(t, token) == SS2_KIND_METER) {
+                context[SS2_F_RHYTHM] = { token };
+                break;
+            }
+        }
+    }
+
+    std::vector<int> out      = task_prefix;
+    int              previous = 0;
+    for (size_t i = 0; i < source.size(); i++) {
+        const NotEvent & e     = *source[i];
+        int              step  = std::max(0, e.global_subbeat - *base_subbeat);
+        int              shift = step - previous;
+        previous               = step;
+        while (shift > t.shift1 - t.shift0 - 1) {
+            out.push_back(t.shift1 - 1);
+            shift -= t.shift1 - t.shift0 - 1;
+        }
+        out.push_back(t.shift0 + shift);
+        std::vector<int> fields[6];
+        for (int f = 0; f < 6; f++) {
+            fields[f] = e.field_tokens[f];
+        }
+        if (!fields[SS2_F_TIMESTAMP].empty()) {
+            int time_id             = (int) lround((e.time - window_start) * (t.time1 - t.time0) / 300.0);
+            time_id                 = std::max(0, std::min(time_id, t.time1 - t.time0 - 1));
+            fields[SS2_F_TIMESTAMP] = { t.time0 + time_id };
+        }
+        if (i == 0) {
+            for (int f : { SS2_F_STRUCTURE, SS2_F_KEY, SS2_F_CHORD }) {
+                if (fields[f].empty() && !context[f].empty()) {
+                    fields[f] = context[f];
+                }
+            }
+            bool has_meter = false, has_eighth = false;
+            for (int token : fields[SS2_F_RHYTHM]) {
+                has_meter  = has_meter || ss2_kind(t, token) == SS2_KIND_METER;
+                has_eighth = has_eighth || ss2_kind(t, token) == SS2_KIND_EIGHTH;
+            }
+            if (has_eighth && !has_meter && !context[SS2_F_RHYTHM].empty()) {
+                fields[SS2_F_RHYTHM].insert(fields[SS2_F_RHYTHM].begin(), context[SS2_F_RHYTHM][0]);
+            }
+        }
+        for (int f = 0; f < 6; f++) {
+            out.insert(out.end(), fields[f].begin(), fields[f].end());
+        }
+    }
+    return out;
+}
+
+// Transcribe a whole song: 24 kHz mono samples -> ABC. Windows of the model
+// length with the overlap and lookahead of the reference, each window
+// prefixed with the events of the overlap, the accepted events stitched in
+// time order, then the notation. melody_only drops the chords.
+static bool ss2_transcribe(SheetSage2 *        m,
+                           const float *       audio,
+                           int                 n_samples,
+                           bool                melody_only,
+                           std::string *       abc,
+                           std::string *       error,
+                           const DebugDumper * dbg) {
+    const SS2Config & c         = m->cfg;
+    const double      length    = c.window_seconds;
+    const double      overlap   = 200.0;
+    const double      lookahead = 100.0;
+    const double      duration  = (double) n_samples / SS2_SAMPLE_RATE;
+    const int         window    = (int) lround(length * SS2_SAMPLE_RATE);
+    if (n_samples < 1025) {
+        return not_fail(error, "Audio must contain at least 1025 samples at 24 kHz");
+    }
+    Timer total;
+
+    std::vector<int> task_prefix = { m->tok.sos };
+    for (const char * name : { "timestamp", "downbeat_meter", "structure", "key", "chord_full", "melody_full" }) {
+        for (size_t i = 0; i < m->tok.prompts.size(); i++) {
+            if (m->tok.prompts[i] == name) {
+                task_prefix.push_back(m->tok.prompt0 + (int) i);
+            }
+        }
+    }
+    task_prefix.push_back(m->tok.out);
+
+    std::vector<NotEvent> stitched;
+    double                start = 0.0, accepted = 0.0;
+    for (int index = 0;; index++) {
+        bool   last       = start + length >= duration - 1e-6;
+        double accept_end = last ? duration : start + length - lookahead;
+        double stop_time  = last ? std::min(duration - start, length) : length - lookahead;
+        fprintf(stderr, "[SheetSage] Window %d: %.1f s to %.1f s, accepting to %.1f s\n", index, start,
+                std::min(duration, start + length), accept_end);
+
+        // The segment padded with silence to the window
+        std::vector<float> segment((size_t) window, 0.0f);
+        int                offset = (int) lround(start * SS2_SAMPLE_RATE);
+        int                avail  = std::min(window, n_samples - offset);
+        memcpy(segment.data(), audio + offset, (size_t) avail * sizeof(float));
+
+        std::vector<float> mel;
+        int                T_mel = 0;
+        ss2_mel(m, segment.data(), window, &mel, &T_mel);
+        SS2Encoded enc;
+        if (!ss2_encode(m, mel, T_mel, &enc, dbg)) {
+            return false;
+        }
+        SS2Decoder dec;
+        if (!ss2_decoder_alloc(m, &dec, enc.T) || !ss2_decoder_prepare(m, &dec, enc.memory)) {
+            return false;
+        }
+        std::vector<int> prefix = task_prefix;
+        int              base   = 0;
+        if (index > 0) {
+            std::vector<int> overlap_prefix = ss2_overlap_prefix(m->tok, task_prefix, stitched, start, accepted, &base);
+            if (!overlap_prefix.empty()) {
+                if ((int) overlap_prefix.size() >= c.max_out - 128) {
+                    ss2_decoder_free(&dec);
+                    return not_fail(error, "Overlap prefix fills the context");
+                }
+                prefix = overlap_prefix;
+            } else {
+                base = 0;
+            }
+        }
+        std::vector<int> tokens;
+        bool             ok = ss2_generate(m, &dec, prefix, stop_time, &tokens, dbg);
+        ss2_decoder_free(&dec);
+        if (!ok) {
+            return false;
+        }
+        if (dbg->enabled) {
+            std::vector<float> ids(tokens.begin(), tokens.end());
+            char               name[32];
+            snprintf(name, sizeof(name), "tokens_%d", index);
+            debug_dump_1d(dbg, name, ids.data(), (int) ids.size());
+        }
+        std::vector<NotEvent> events;
+        if (!ss2_decode_events(c, m->tok, tokens, start, accepted, accept_end, duration, base, &events)) {
+            return false;
+        }
+        stitched.insert(stitched.end(), events.begin(), events.end());
+        std::stable_sort(stitched.begin(), stitched.end(), [](const NotEvent & a, const NotEvent & b) {
+            return std::tie(a.time, a.global_subbeat) < std::tie(b.time, b.global_subbeat);
+        });
+        if (last) {
+            break;
+        }
+        accepted = accept_end;
+        start    = std::min(start + (length - overlap), duration - length);
+    }
+    bool ok = notation_abc(stitched, duration, m->tok.tables, melody_only, abc, error);
+    fprintf(stderr, "[SheetSage] Transcribed: %.1f s of audio, %zu events, %.1f s%s\n", duration, stitched.size(),
+            total.ms() / 1000.0, ok ? "" : ", no score");
+    return ok;
+}
+
+// Any audio file to the 24 kHz mono waveform the model reads: the channels
+// averaged, the rate converted
+static bool ss2_load_audio(const char * path, std::vector<float> * out) {
+    int     T = 0, sr = 0;
+    float * planar = audio_read(path, &T, &sr);
+    if (!planar) {
+        return false;
+    }
+    std::vector<float> mono((size_t) T);
+    for (int i = 0; i < T; i++) {
+        mono[(size_t) i] = 0.5f * (planar[i] + planar[T + i]);
+    }
+    free(planar);
+    if (sr == SS2_SAMPLE_RATE) {
+        *out = mono;
+        return true;
+    }
+    int     n_out     = 0;
+    float * resampled = audio_resample(mono.data(), T, sr, SS2_SAMPLE_RATE, 1, &n_out);
+    if (!resampled) {
+        return false;
+    }
+    out->assign(resampled, resampled + n_out);
+    free(resampled);
     return true;
 }

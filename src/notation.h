@@ -35,8 +35,10 @@ struct NotNote {
 // One decoded event with its resolved time; fields absent when the token
 // stream did not carry them
 struct NotEvent {
-    int                  subbeat;
+    int                  subbeat;          // step within its window
+    int                  global_subbeat;   // step in the song, the windows stitched
     double               time;
+    std::vector<int>     field_tokens[6];  // the tokens of each field, prefix re-encoding reads them
     bool                 has_timestamp = false;
     bool                 has_meter     = false;
     int                  meter_num = 0, meter_den = 0;

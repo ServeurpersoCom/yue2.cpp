@@ -73,7 +73,7 @@ int main(int argc, char ** argv) {
     }
     prefix.push_back(m.tok.out);
     std::vector<int> tokens;
-    if (!ss2_generate(&m, &dec, prefix, &tokens, &dbg)) {
+    if (!ss2_generate(&m, &dec, prefix, (double) got / SS2_SAMPLE_RATE, &tokens, &dbg)) {
         return 1;
     }
     std::string path = std::string(argv[3]) + "/tokens.txt";
@@ -86,7 +86,7 @@ int main(int argc, char ** argv) {
     // The score, full and melody only, the way the reference writes them
     double                duration = (double) got / SS2_SAMPLE_RATE;
     std::vector<NotEvent> events;
-    if (!ss2_decode_events(m.cfg, m.tok, tokens, 0.0, duration, &events)) {
+    if (!ss2_decode_events(m.cfg, m.tok, tokens, 0.0, 0.0, duration, duration, 0, &events)) {
         return 1;
     }
     for (int melody_only = 0; melody_only < 2; melody_only++) {

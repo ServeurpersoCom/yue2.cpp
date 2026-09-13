@@ -114,6 +114,11 @@ add_executable(yue-plan tools/yue-plan.cpp src/request.cpp)
 target_link_libraries(yue-plan PRIVATE yyjson)
 link_ggml_backends(yue-plan)
 
+# yue-transcribe: audio to score (SheetSage2 transcriber)
+add_executable(yue-transcribe tools/yue-transcribe.cpp)
+target_link_libraries(yue-transcribe PRIVATE yyjson)
+link_ggml_backends(yue-transcribe)
+
 # yue-synth: full pipeline (score -> semantic -> flow matching -> VAE -> audio)
 add_executable(yue-synth tools/yue-synth.cpp src/request.cpp src/model-store.cpp)
 target_link_libraries(yue-synth PRIVATE yyjson)
