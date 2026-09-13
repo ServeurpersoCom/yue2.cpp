@@ -19,4 +19,10 @@ for type in Q5_K_M Q6_K Q8_0; do
     quantize models/YuE2-3B-BF16.gguf "$type"
 done
 
+# Transcriber 632M (native F32): the linear projections of the conformer
+# and the decoder, convolutions and tables kept exact
+for type in Q5_K_M Q6_K Q8_0; do
+    quantize models/SheetSage2-F32.gguf "$type"
+done
+
 # VAE: never quantized, its weights carry the audio and stay native F32

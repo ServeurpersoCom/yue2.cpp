@@ -2,7 +2,9 @@
 // Reads BF16 GGUF, writes quantized GGUF with mixed-precision K-quant policy.
 // Policy mirrors llama-quantize: important tensors (v_proj, down_proj) get
 // bumped in S/M variants, embed_tokens and lm_head always Q6_K, norms promoted to F32.
-// The VAE ships native, its weights carry the audio and survive nothing.
+// The VAE ships native, its weights carry the audio and survive nothing. The
+// transcriber quantizes its linear projections alone: convolutions, tables
+// and positions stay F32.
 // Streaming write: one tensor at a time, low memory footprint for small configs.
 //
 // Usage: quantize <input.gguf> <output.gguf> <type>
@@ -86,14 +88,24 @@ static bool is_important_l(const char * name) {
     return is_important_sm(name) || (strstr(name, "o_proj.weight") != nullptr);
 }
 
-// embed_tokens and the untied head carry the vocabulary: both take the embed type
+// embed_tokens and the untied head carry the vocabulary: both take the embed
+// type, and so does the tied embedding of the transcriber decoder
 static bool is_embed(const char * name) {
-    return (strstr(name, "embed_tokens.weight") != nullptr) || (strstr(name, "lm_head.weight") != nullptr);
+    return (strstr(name, "embed_tokens.weight") != nullptr) || (strstr(name, "lm_head.weight") != nullptr) ||
+           (strstr(name, "token_embedding.weight") != nullptr);
 }
 
-// Should this tensor be quantized at all?
-static bool should_quantize(int n_dims, const char * arch) {
-    return n_dims >= 2 && strstr(arch, "vae") == nullptr;
+// Should this tensor be quantized at all? The transcriber keeps its
+// convolution kernels (3D), the mel filterbank and the learned positions
+// exact, and quantizes the linear projections alone.
+static bool should_quantize(int n_dims, const char * arch, const char * name) {
+    if (strstr(arch, "vae") != nullptr) {
+        return false;
+    }
+    if (strstr(arch, "sheetsage") != nullptr) {
+        return n_dims == 2 && strstr(name, "mel_scale.fb") == nullptr && strstr(name, "embed_positions") == nullptr;
+    }
+    return n_dims >= 2;
 }
 
 // Decide target type for a single tensor given the variant + layer info
@@ -102,7 +114,7 @@ static enum ggml_type pick_type(const char *         name,
                                 const char *         arch,
                                 const QuantVariant & v,
                                 int                  n_layers) {
-    if (!should_quantize(n_dims, arch)) {
+    if (!should_quantize(n_dims, arch, name)) {
         return GGML_TYPE_COUNT;
     }
 
