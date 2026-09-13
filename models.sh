@@ -2,9 +2,9 @@
 # Download the pre-quantized YuE2 GGUF release from HuggingFace
 #
 # Usage: ./models.sh [options]
-#   default:    Q8_0 backbone + F32 VAE
+#   default:    Q8_0 backbone + F32 VAE + Q8_0 transcriber
 #   --all:      every published quant
-#   --quant X:  backbone quant (BF16, Q8_0, Q6_K, Q5_K_M)
+#   --quant X:  backbone and transcriber quant (BF16, Q8_0, Q6_K, Q5_K_M)
 
 set -eu
 
@@ -40,6 +40,10 @@ if [ "$ALL" = 1 ]; then
     dl "YuE2-3B-Q5_K_M.gguf"
     dl "YuE2-3B-Q6_K.gguf"
     dl "YuE2-3B-Q8_0.gguf"
+    dl "SheetSage2-F32.gguf"
+    dl "SheetSage2-Q5_K_M.gguf"
+    dl "SheetSage2-Q6_K.gguf"
+    dl "SheetSage2-Q8_0.gguf"
     exit 0
 fi
 
@@ -56,3 +60,7 @@ resolve_quant() {
 
 dl "YuE2-Vae-F32.gguf"
 dl "YuE2-3B-$(resolve_quant "$QUANT").gguf"
+# The transcriber has no BF16, its native is F32
+transcriber_quant="$(resolve_quant "$QUANT")"
+[ "$transcriber_quant" = "BF16" ] && transcriber_quant="F32"
+dl "SheetSage2-$transcriber_quant.gguf"

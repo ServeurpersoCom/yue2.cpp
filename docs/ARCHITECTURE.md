@@ -123,7 +123,9 @@ decides what stays in VRAM following its eviction policy:
   score and the semantic stages, the synthesis group `{ NAR, VAE }` the
   flow matching and the decode, so when the synthesis group is required
   the AR half has been released and is unloaded. The two halves of the
-  backbone never coexist, the peak is the larger one.
+  backbone never coexist, the peak is the larger one. The transcriber
+  `{ SS2 }` is a group of its own, loaded for a transcription and
+  unloaded after it.
 - `EVICT_NEVER` (`yue-server --keep-loaded`): nothing is ever evicted,
   modules accumulate, which is the layout of a card with the budget.
 
@@ -148,6 +150,7 @@ Weight buffers per module, measured at load on CUDA:
 |--------|------|------|------|--------|
 | Backbone, AR half (311 tensors) | 4131.5 MB | 2195.1 MB | 1694.8 MB | 1542.4 MB |
 | Backbone, NAR half (316 tensors) | 2698.0 MB | 1433.5 MB | 1107.0 MB | 953.9 MB |
+| Transcriber, SheetSage2 on MERT-v2 (1035 tensors) | 2582.1 MB (F32) | 912.6 MB | 775.6 MB | 702.4 MB |
 | VAE decoder | 126.7 MB | | | |
 
 The KV cache is the other big term and the only one that scales with a
@@ -294,6 +297,41 @@ GGML lowering: transposed convolutions as GEMM plus `col2im_1d`, snake
 activations written as their 5 op decomposition so the backend pattern
 matcher dispatches its fused kernel (see [Patched GGML fork](#patched-ggml-fork)).
 Conv weights are stored F16 on device with F32 activations.
+
+### SheetSage2 transcriber (`SheetSage2`, optional)
+
+The audio to score model of the same authors, ported so a recording can
+become the `abc` of a cover. One GGUF holds MERT-v2-FullSong with the
+SheetSage2 LoRA adapters merged into its attention projections (float32
+at conversion, bit identical to the merge the reference does at load)
+and the SheetSage2 head. `src/sheetsage.h` runs one 300 s window, every
+input padded with silence to that length like the reference since the
+global response norm of the frontend spans the whole window:
+
+```
+24 kHz mono
+        v  log mel on the host: centered STFT 2048/240, 128 bins, dB, per bin normalization
+[128, 30000]
+        v  three ConvNeXt blocks, 128 / 512 / 1024 channels, strides 1 / 2 / 2,
+           depthwise conv k=7, LayerNorm, GELU, global response norm over time
+[1024, 7500]
+        v  24 conformer layers: macaron FFN, attention with NeoX RoPE (base 1e4),
+           conv module (pointwise, GLU, depthwise k=31, LayerNorm, GELU, pointwise), FFN, LayerNorm
+        v  softmax mix of the 25 states, projection 1024 -> 512
+memory [512, 7500]
+        v  BART decoder, 6 layers d=512, 8 heads, learned positions offset by 2,
+           self attention on a cache, cross attention on the memory, tied output
+symbolic tokens (vocab 31678), greedy under the grammar of the event stream
+        v  ss2_decode_events: subbeat shifts, fields, timestamp anchors -> timed events
+        v  notation.h: beats, measures, subbeat grid, voices, keys, chords, sections
+ABC score
+```
+
+Depthwise convolutions are sums of shifted views, exact F32 on every
+backend. Songs longer than a window run windows of 300 s with 200 s of
+overlap and 100 s of lookahead, each later window prefixed with the
+re-encoded events of the overlap. The tokenizer tables and the ABC
+spelling of every chord and key label travel in the GGUF metadata.
 
 ## Inference recipe
 
@@ -622,6 +660,7 @@ Required:
   --vae <gguf>           VAE GGUF
 
 Optional:
+  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
   --max-batch <N>        Song batch limit, one KV set each (default: 1)
@@ -650,6 +689,14 @@ POST /synth                     Submit a generation job, returns job ID
   steps < 1, lm_batch_size outside [1, --max-batch], synth_batch_size
   outside [1, 9], or a sampling preset outside the protocol bounds
 
+POST /transcribe                Submit a transcription job, returns job ID
+  body: multipart/form-data, an "audio" part (WAV or MP3) and an optional
+  "request" JSON part whose cot picks the melody voices alone (melody, the
+  default) or the chord symbols kept (full)
+  response: {"id":"1a2b..."}
+  400 without an audio part or on audio that does not decode,
+  501 when the server runs without --transcriber
+
 GET  /job?id=N                  Poll job status
   response: {"status":"running|done|failed|cancelled"}
 
@@ -657,7 +704,8 @@ GET  /job?id=N&result=1         Fetch job result
   multipart/mixed, boundary yue2-batch-boundary: per track, song-major,
   one application/json replay request part (the request carrying the
   semantic stream, the score and the seeds of that track) then one
-  audio/mpeg or audio/wav part
+  audio/mpeg or audio/wav part; for a transcription job, application/json,
+  the request whose abc is the score and whose cot names what it keeps
   404 while the result is not ready
 
 POST /job?id=N&cancel=1         Cancel a specific job
@@ -712,6 +760,31 @@ terminal and to a 512 line ring the SSE endpoint replays. The capture is
 released by an idempotent stop that runs both from the RAII destructor and
 from an exit hook, so a loader that aborts the process still gets its
 message out.
+
+## yue-transcribe reference
+
+```
+Usage: ./yue-transcribe --model <gguf> --audio <file> [options]
+
+Required:
+  --model <gguf>         Transcriber GGUF
+  --audio <file>         Recording to transcribe (WAV or MP3)
+
+Optional:
+  --out <path>           Output score (default: score.abc)
+  --chords               Keep the chord symbols (default: melody voices alone)
+
+Debug:
+  --no-fa                Disable flash attention
+  --dump <dir>           Dump intermediate tensors
+```
+
+Audio to score. The recording (any WAV or MP3, any rate, mono or stereo)
+is averaged to mono and resampled to 24 kHz, transcribed by the SheetSage2
+transcriber (`src/sheetsage.h`, `src/notation.h`), and written as ABC: the
+melody voices alone by default, the score the cover path of YuE2 takes as
+its `abc` with `cot` `melody`, or with the chord symbols kept (`--chords`)
+for `cot` `full`. The WebUI does the same from the menu of a song card.
 
 ## neural-codec reference
 
@@ -788,7 +861,7 @@ line per case and exits non zero on failure. `GGML_BACKEND` selects the
 device, and the `test-*.sh` next to each test runs it on every backend that
 matters for it and archives the output as `{backend}-{subject}.log`.
 
-Sixteen cases, all green on CUDA0 and CPU:
+Twenty four cases, all green on CUDA0 and CPU:
 
 | Case | Threshold | CUDA0 rel RMS | CPU rel RMS |
 |------|-----------|---------------|-------------|
@@ -802,6 +875,8 @@ Sixteen cases, all green on CUDA0 and CPU:
 | nar-ode (8 midpoint steps) | 5e-2 | 1.552e-3 | 1.448e-3 |
 | nar-batch (3 variations, one graph) | 5e-2 | 7.582e-3 | 8.358e-3 |
 | nar-ode-batch (2 variations, 8 steps) | 5e-2 | 2.117e-3 | 2.211e-3 |
+| sheetsage-mel / subsampled / backbone / mixed / memory (synthetic piece) | 5e-2 | 2.5e-6 to 2.3e-2 | 2.5e-6 to 7.3e-3 |
+| sheetsage-tokens, sheetsage-abc, sheetsage-abc-melody | identical | identical | identical |
 | bpe | 0 (exact) | 0 | 0 |
 | sampling-abc | 1e-4 | 1.138e-8 | 1.138e-8 |
 | sampling-semantic | 1e-4 | 5.327e-8 | 5.327e-8 |

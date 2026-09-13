@@ -16,10 +16,13 @@ https://huggingface.co/Serveurperso/YuE2-GGUF/tree/main
 |------|----------|------|
 | Backbone | YuE2-3B-Q8_0.gguf | 3.81 GB |
 | VAE | YuE2-Vae-F32.gguf | 530 MB |
+| Transcriber (optional) | SheetSage2-Q8_0.gguf | 958 MB |
 
 Q8_0 is near lossless. The backbone also ships in BF16 / Q6_K / Q5_K_M, the
 VAE in F32 only since its weights are the audio. The Q8_0 pair runs in about
-4.4 GB plus the KV cache, the native pair in about 7.7 GB.
+4.4 GB plus the KV cache, the native pair in about 7.7 GB. The transcriber
+turns a recording into its score for covers; it ships in F32 / Q8_0 / Q6_K /
+Q5_K_M and loads only for a transcription.
 
 Alternative: `./models.sh` downloads the default set automatically
 (needs `pip install hf`), `./models.sh --all` everything.
@@ -87,7 +90,10 @@ server.cmd        # Windows
 
 Open http://localhost:8087 in your browser. The WebUI handles everything:
 write style tags and lyrics, generate, read the score the model composed,
-play and download tracks.
+play and download tracks. Open an MP3 or WAV to get it on a card, then
+Transcribe score from the card menu: the melody lands in the score field
+with cot set to melody, add your lyrics and a style, and the model covers
+the song.
 
 ## Pipeline
 
@@ -136,6 +142,7 @@ Required:
   --vae <gguf>           VAE GGUF
 
 Optional:
+  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
   --max-batch <N>        Song batch limit, one KV set each (default: 1)
@@ -204,6 +211,15 @@ read it, edit it, put it back in the request as `abc`.
 
 ```bash
 ./build/yue-plan --model models/YuE2-3B-Q8_0.gguf --request request.json --out score.abc
+```
+
+The `yue-transcribe` tool runs the SheetSage2 transcriber on a recording
+and writes the score it hears, the melody voices alone by default, the
+score a cover takes as `abc` with `cot` set to `melody`, or with the chord
+symbols kept for `cot` `full`.
+
+```bash
+./build/yue-transcribe --model models/SheetSage2-Q8_0.gguf --audio song.mp3 --out score.abc
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full JSON
