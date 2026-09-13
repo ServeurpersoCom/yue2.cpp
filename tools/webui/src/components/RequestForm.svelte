@@ -207,10 +207,6 @@
 		clearSection(app.request, 'semantic');
 	}
 
-	function clearFlowMatching() {
-		clearSection(app.request, 'flow');
-	}
-
 	function clearPost() {
 		clearSection(app.request, 'post');
 	}
@@ -476,13 +472,13 @@
 	</details>
 
 	<details class="has-clear">
-		<summary>Flow matching parameters</summary>
+		<summary>Advanced and post-processing</summary>
 		<button
 			type="button"
 			class="clear-btn details-clear"
-			title="Clear flow matching parameters"
-			onclick={clearFlowMatching}
-			aria-label="Clear flow matching parameters"
+			title="Clear advanced and post-processing"
+			onclick={clearPost}
+			aria-label="Clear advanced and post-processing"
 		>
 			<X size={20} />
 		</button>
@@ -512,23 +508,6 @@
 						title="Seed of the acoustic noise. Change it to re-render the same song differently."
 					/></label
 				>
-			</div>
-		</div>
-	</details>
-
-	<details class="has-clear">
-		<summary>Advanced and post-processing</summary>
-		<button
-			type="button"
-			class="clear-btn details-clear"
-			title="Clear advanced and post-processing"
-			onclick={clearPost}
-			aria-label="Clear advanced and post-processing"
-		>
-			<X size={20} />
-		</button>
-		<div class="details-body">
-			<div class="meta-grid">
 				<label
 					>Peak clip <input
 						type="text"

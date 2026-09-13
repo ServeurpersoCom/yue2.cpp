@@ -8,7 +8,7 @@
 
 import type { Yue2Request, Yue2Sampling } from './types.js';
 
-export type FieldSection = 'content' | 'lm' | 'score' | 'semantic' | 'flow' | 'post';
+export type FieldSection = 'content' | 'lm' | 'score' | 'semantic' | 'post';
 
 interface FieldDef {
 	key: keyof Yue2Request;
@@ -33,12 +33,10 @@ export const FIELDS: readonly FieldDef[] = [
 	{ key: 'cfg_scale', section: 'semantic', type: 'num' },
 	{ key: 'semantic_tokens', section: 'semantic', type: 'str' },
 
-	// flow: the acoustic solver
-	{ key: 'steps', section: 'flow', type: 'num' },
-	{ key: 'synth_batch_size', section: 'flow', type: 'num' },
-	{ key: 'seed', section: 'flow', type: 'num' },
-
-	// post: output normalization and encoding
+	// post: the acoustic solver, output normalization and encoding
+	{ key: 'steps', section: 'post', type: 'num' },
+	{ key: 'synth_batch_size', section: 'post', type: 'num' },
+	{ key: 'seed', section: 'post', type: 'num' },
 	{ key: 'peak_clip', section: 'post', type: 'num' },
 	{ key: 'mp3_bitrate', section: 'post', type: 'num' }
 ];
