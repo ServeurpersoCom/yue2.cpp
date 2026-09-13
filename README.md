@@ -59,8 +59,11 @@ macOS auto-enables Metal and Accelerate BLAS with any of the above.
 ## Convert
 
 To build the GGUFs locally from the official checkpoints instead, download
-[m-a-p/YuE2-3B](https://huggingface.co/m-a-p/YuE2-3B) and
-[m-a-p/YuE2-Vae](https://huggingface.co/m-a-p/YuE2-Vae) into `checkpoints/`.
+[m-a-p/YuE2-3B](https://huggingface.co/m-a-p/YuE2-3B),
+[m-a-p/YuE2-Vae](https://huggingface.co/m-a-p/YuE2-Vae), and for the
+transcriber [m-a-p/SheetSage2](https://huggingface.co/m-a-p/SheetSage2) with
+its parent [m-a-p/MERT-v2-FullSong](https://huggingface.co/m-a-p/MERT-v2-FullSong)
+(both gated, accept their terms and `hf auth login` first) into `checkpoints/`.
 
 ```bash
 pip install hf gguf numpy
@@ -73,6 +76,7 @@ pip install hf gguf numpy
 |------|-----------|------|
 | YuE2-3B-BF16.gguf | 3.6B Mixture-of-Transformers backbone | 7.17 GB |
 | YuE2-Vae-F32.gguf | Oobleck VAE encoder + decoder | 530 MB |
+| SheetSage2-F32.gguf | SheetSage2 transcriber on MERT-v2-FullSong, LoRA merged | 2.71 GB |
 
 ## Run
 

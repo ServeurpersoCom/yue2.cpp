@@ -2,6 +2,8 @@
 # Download YuE2 checkpoints from HuggingFace
 # Usage: ./checkpoints.sh [--all]
 #   default: YuE2-3B (MoT backbone + qwen.tiktoken) + YuE2-Vae (listening decoder)
+#            + SheetSage2 and its MERT-v2-FullSong parent (audio to score), both
+#            gated: accept their terms on HuggingFace and hf auth login first
 #   --all:   + YuE2-Vae-legacy (benchmark decoder)
 
 set -eu
@@ -25,6 +27,8 @@ dl_repo() {
 # Core (required)
 dl_repo "YuE2-3B" "m-a-p/YuE2-3B"
 dl_repo "YuE2-Vae" "m-a-p/YuE2-Vae"
+dl_repo "SheetSage2" "m-a-p/SheetSage2"
+dl_repo "MERT-v2-FullSong" "m-a-p/MERT-v2-FullSong"
 
 # Every decoder from the YuE2 release
 if [ "${1:-}" = "--all" ]; then
