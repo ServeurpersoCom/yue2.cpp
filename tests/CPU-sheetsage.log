@@ -1,0 +1,35 @@
+`torch_dtype` is deprecated! Use `dtype` instead!
+`torch_dtype` is deprecated! Use `dtype` instead!
+[GGUF] ../models/SheetSage2-F32.gguf: 1039 tensors, data at offset 92800
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] SheetSage backend: CPU (CPU threads: 16)
+[WeightCtx] Loaded 1035 tensors, 2582.1 MB into backend
+[SheetSage] Loaded: 24 conformer layers, 6 decoder layers, vocab 31678, window 300 s
+[Test-SheetSage] Mel: 30000 frames, 635 ms
+[Debug] mel: [30000, 128] first4: 2.528364 1.898706 1.544601 1.155594
+[Debug] subsampled: [7500, 1024] first4: -9.424257 -3.354845 -5.469433 1.905030
+[Debug] backbone: [7500, 1024] first4: 0.033012 0.007261 0.011575 0.051067
+[Debug] mixed: [7500, 1024] first4: -0.087342 -0.081629 0.015210 -0.034564
+[Debug] memory: [7500, 512] first4: -0.181708 0.147855 0.091859 -0.484520
+[SheetSage] Encoded: 7500 frames, 5519 nodes, 24553 ms
+[Debug] logits_0: [31678] first4: -3.331131 2.631231 7.256881 11.718497
+[SheetSage] Decoding 0/5120
+[Debug] logits_1: [31678] first4: -3.298655 -1.519246 0.032235 7.110842
+[Debug] logits_2: [31678] first4: -4.484994 1.988547 3.219470 5.244808
+[Debug] logits_3: [31678] first4: -5.959359 -0.165557 4.486856 0.887511
+[SheetSage] Decoding 100/5120
+[SheetSage] Decoding 200/5120
+[SheetSage] Decoded: 215 tokens, 1.5 s (6.9 ms/token)
+[Test-SheetSage] 39 events, scores written
+[Parity] sheetsage-mel: rel rms 2.456e-06 max abs 1.856e-03 OK
+[Parity] sheetsage-subsampled: rel rms 3.443e-04 max abs 3.806e-02 OK
+[Parity] sheetsage-backbone: rel rms 6.346e-04 max abs 7.968e-02 OK
+[Parity] sheetsage-mixed: rel rms 3.354e-03 max abs 2.077e-01 OK
+[Parity] sheetsage-memory: rel rms 7.082e-03 max abs 3.245e-01 OK
+[Parity] sheetsage-tokens: identical OK
+[Parity] sheetsage-abc: identical OK
+[Parity] sheetsage-abc-melody: identical OK
