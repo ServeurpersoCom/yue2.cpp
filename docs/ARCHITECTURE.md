@@ -533,6 +533,7 @@ Debug:
   --vae-halo <N>         VAE tile halo frames (default: 16)
   --no-fa                Disable flash attention
   --clamp-fp16           Clamp hidden states to FP16 range
+  --dump <dir>           Dump intermediate tensors
 ```
 
 A batch numbers every output path with song then variation index,
@@ -722,7 +723,7 @@ line per case and exits non zero on failure. `GGML_BACKEND` selects the
 device, and the `test-*.sh` next to each test runs it on every backend that
 matters for it and archives the output as `{backend}-{subject}.log`.
 
-Twelve cases, all green on CUDA0 and CPU:
+Sixteen cases, all green on CUDA0 and CPU:
 
 | Case | Threshold | CUDA0 rel RMS | CPU rel RMS |
 |------|-----------|---------------|-------------|
@@ -765,6 +766,42 @@ claimed to: the sampling stream of a seed is conformant rather than
 identical when the logits differ at epsilon level, and the backends
 disagree on graph fusion, so a song is reproducible on one device and
 close on another.
+
+### Cosine similarity harness
+
+`debug-nar-cossim.py` isolates the acoustic stack from the stochastic AR:
+the GGML side runs the full pipeline with `--dump` on the shared
+`tests/request0.json`, which carries its semantic stream so the
+autoregression reduces to one prefill, then the python side reloads the
+dumped AR sequence and noise, prefills the reference backbone into a
+`CachedNAR` (CUDA float32), walks the same midpoint schedule and decodes
+with the reference VAE. It reports per-probe cosines (timestep embedding,
+latent block input, layer 0 attention, named layers 0 / 7 / 14 / 21 / 27,
+per-step velocities and states, final latents, decoded audio + STFT
+cosine) and the error growth across steps.
+
+`./debug-nar-cossim.sh` archives the campaign as
+`{backend}-[NOFUSION-]{quant}.log` over CUDA0 / Vulkan0 / CPU, fusion on
+and off, quants BF16 / Q8_0 / Q6_K / Q5_K_M (the backbone quant varies,
+the VAE stays F32, and the same semantic stream feeds every run: the delta
+is the pure backbone quant effect on the prefill and the flow matching).
+
+Headline `nar_x0` / STFT cosines on CUDA0: BF16 0.999953 / 0.999926,
+Q8_0 0.999522 / 0.999294, Q6_K 0.996602 / 0.996755, Q5_K_M 0.996904 /
+0.996684; CPU: BF16 0.999998 / 0.999994, Q8_0 0.999662 / 0.999626, Q6_K
+0.996665 / 0.996254, Q5_K_M 0.996283 / 0.996323. Monotone degradation
+down to Q6_K, Q5_K_M lands next to it, fusion and no-fusion within 1e-4.
+
+Vulkan0 sits at 0.76 / 0.67 for every quant in this campaign, and the
+harness located why: it runs with `--no-fa` like the other ports, and on
+Vulkan the F32 attention fallback goes wrong from the first layer of the
+AR prefill (`test-lm` in the same mode fails at 0.34 relative RMS with
+wrong argmax, `test-nar` with a flash prefill passes). The trigger is the
+`ggml_mul_mat` of the fallback fed with the strided KV cache view as its
+first operand, a `[D, n_kv_pad, Nkv]` view of a view of the 4D cache with
+a row group stride of the whole context: a contiguous copy of that view
+alone restores the parity. With flash attention, the default on every
+GPU backend, Vulkan0 reproduces the reference at 0.999996 on `nar_x0`.
 
 ## Performance
 

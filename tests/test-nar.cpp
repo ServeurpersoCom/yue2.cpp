@@ -98,9 +98,11 @@ int main(int argc, char ** argv) {
 
     std::vector<float> result(x_t.size());
     bool               ok;
+    DebugDumper        quiet;
+    debug_init(&quiet, nullptr);
     if (solve) {
         result = x_t;
-        ok     = nar_solve(&nar, result.data(), T_lat, M, ar_len, 0, steps);
+        ok     = nar_solve(&nar, result.data(), T_lat, M, ar_len, 0, steps, &quiet);
     } else {
         ok = nar_velocity(&nar, x_t.data(), T_lat, M, ar_len, 0, raw_t, result.data());
     }

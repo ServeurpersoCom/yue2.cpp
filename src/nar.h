@@ -19,6 +19,7 @@
 // prefix rows repeated for each, the frame inputs shared.
 #pragma once
 
+#include "debug.h"
 #include "qwen3-lm.h"
 #include "timer.h"
 
@@ -32,6 +33,10 @@
 #define YUE2_NAR_GRAPH_NODES 8192
 #define YUE2_TIME_EMBED_DIM  256
 #define YUE2_NAR_MASK_PAD    64
+
+// Named probes of the velocity graph, read by the cossim harness: the key
+// depths of the latent block and the layer 0 attention output
+#define YUE2_NAR_PROBE_LAYERS { 0, 7, 14, 21, 27 }
 
 struct Yue2NAR {
     Qwen3LM * lm;  // AR half: config, final norm, KV cache
@@ -350,15 +355,24 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int M, int ar_len, int kv_se
     struct ggml_tensor * hidden = nar_linear_bias(ctx, n->vae2llm_w, n->vae2llm_b, n->in_x);
     struct ggml_tensor * temb   = nar_linear_bias(ctx, n->time_w0, n->time_b0, n->in_time);
     temb                        = nar_linear_bias(ctx, n->time_w1, n->time_b1, ggml_silu(ctx, temb));
-    hidden                      = ggml_add(ctx, hidden, temb);
-    hidden                      = ggml_add(ctx, hidden, n->in_pos_emb);
+    ggml_set_name(temb, "temb_t");
+    ggml_set_output(temb);
+    hidden = ggml_add(ctx, hidden, temb);
+    hidden = ggml_add(ctx, hidden, n->in_pos_emb);
+    ggml_set_name(hidden, "hidden_after_input");
+    ggml_set_output(hidden);
 
+    const int probes[] = YUE2_NAR_PROBE_LAYERS;
     for (int l = 0; l < c.n_layers; l++) {
         Qwen3Layer *         ly   = &n->layers[l];
         struct ggml_tensor * norm = qwen3_rms_norm(ctx, hidden, ly->input_layernorm, c.rms_norm_eps);
         struct ggml_tensor * attn =
             nar_build_attn(ctx, c, ly, norm, n->in_pos, n->in_mask, n->lm->kv_k[kv_set][l], n->lm->kv_v[kv_set][l],
                            ar_len, N, M, n->lm->use_flash_attn, n->lm->clamp_fp16);
+        if (l == 0) {
+            ggml_set_name(attn, "layer0_sa_output");
+            ggml_set_output(attn);
+        }
         hidden = ggml_add(ctx, hidden, attn);
         if (n->lm->clamp_fp16) {
             hidden = ggml_clamp(ctx, hidden, -65504.0f, 65504.0f);
@@ -367,6 +381,14 @@ static bool nar_build_graph(Yue2NAR * n, int T_lat, int M, int ar_len, int kv_se
         hidden = ggml_add(ctx, hidden, qwen3_build_mlp(ctx, ly, norm, N * M));
         if (n->lm->clamp_fp16) {
             hidden = ggml_clamp(ctx, hidden, -65504.0f, 65504.0f);
+        }
+        for (int probe : probes) {
+            if (l == probe) {
+                char name[64];
+                snprintf(name, sizeof(name), "hidden_after_layer%d", l);
+                ggml_set_name(hidden, name);
+                ggml_set_output(hidden);
+            }
         }
     }
 
@@ -445,22 +467,50 @@ nar_velocity(Yue2NAR * n, const float * x_t, int T_lat, int M, int ar_len, int k
     return true;
 }
 
+// Reads each named probe of the last computed graph and dumps its first
+// variation time-major [N, ne0], the layout of the torch reference probes
+static void nar_dump_named(const Yue2NAR * n, const DebugDumper * dbg) {
+    const int                probes[] = YUE2_NAR_PROBE_LAYERS;
+    const char *             fixed[]  = { "temb_t", "hidden_after_input", "layer0_sa_output" };
+    std::vector<std::string> names(fixed, fixed + 3);
+    for (int probe : probes) {
+        names.push_back("hidden_after_layer" + std::to_string(probe));
+    }
+    for (const std::string & name : names) {
+        struct ggml_tensor * t  = ggml_graph_get_tensor(n->graph, name.c_str());
+        int64_t              n0 = t->ne[0];
+        int64_t              n1 = t->ne[1];
+        std::vector<float>   buf((size_t) n0 * n1);
+        ggml_backend_tensor_get(t, buf.data(), 0, (size_t) n0 * n1 * sizeof(float));
+        if (n1 <= 1) {
+            debug_dump_1d(dbg, name.c_str(), buf.data(), (int) n0);
+        } else {
+            debug_dump_2d(dbg, name.c_str(), buf.data(), (int) n1, (int) n0);
+        }
+    }
+}
+
 // Midpoint flow matching solver, t walking from 1 down to 0.
 // state [M, T_lat, latent_dim] holds the noise of every variation on entry
-// and the latents on exit.
-static bool nar_solve(Yue2NAR * n,
-                      float *   state,
-                      int       T_lat,
-                      int       M,
-                      int       ar_len,
-                      int       kv_set,
-                      int       steps,
+// and the latents on exit. The dumper, when enabled, records the first
+// variation: the noise, the probes of the first evaluation, both velocities
+// and the state of every step, and the latents.
+static bool nar_solve(Yue2NAR *           n,
+                      float *             state,
+                      int                 T_lat,
+                      int                 M,
+                      int                 ar_len,
+                      int                 kv_set,
+                      int                 steps,
+                      const DebugDumper * dbg,
                       bool (*cancelled)(void *) = nullptr,
                       void * cancel_data        = nullptr) {
     size_t             count = (size_t) n->latent_dim * T_lat * M;
     std::vector<float> first(count), mid(count), second(count);
     float              dt = 1.0f / (float) steps;
+    char               name[64];
 
+    debug_dump_2d(dbg, "noise", state, T_lat, n->latent_dim);
     Timer solve_timer;
     for (int step = 0; step < steps; step++) {
         Timer step_timer;
@@ -472,6 +522,9 @@ static bool nar_solve(Yue2NAR * n,
         if (!nar_velocity(n, state, T_lat, M, ar_len, kv_set, nar_logit_clamped(t), first.data())) {
             return false;
         }
+        if (dbg->enabled && step == 0) {
+            nar_dump_named(n, dbg);
+        }
         for (size_t i = 0; i < count; i++) {
             mid[i] = state[i] - first[i] * (dt * 0.5f);
         }
@@ -481,8 +534,15 @@ static bool nar_solve(Yue2NAR * n,
         for (size_t i = 0; i < count; i++) {
             state[i] -= second[i] * dt;
         }
+        snprintf(name, sizeof(name), "nar_step%d_first", step);
+        debug_dump_2d(dbg, name, first.data(), T_lat, n->latent_dim);
+        snprintf(name, sizeof(name), "nar_step%d_second", step);
+        debug_dump_2d(dbg, name, second.data(), T_lat, n->latent_dim);
+        snprintf(name, sizeof(name), "nar_step%d_xt", step);
+        debug_dump_2d(dbg, name, state, T_lat, n->latent_dim);
         fprintf(stderr, "[NAR] Step %d/%d, %.0f ms\n", step + 1, steps, step_timer.ms());
     }
+    debug_dump_2d(dbg, "nar_x0", state, T_lat, n->latent_dim);
 
     fprintf(stderr, "[NAR] Solved: T_lat=%d, %d variations, %d steps, %.0f ms (%.1f ms/step)\n", T_lat, M, steps,
             solve_timer.ms(), solve_timer.ms() / steps);
