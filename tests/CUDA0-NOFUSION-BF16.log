@@ -1,6 +1,16 @@
+[Store] Created (policy=STRICT)
 [BPE] Loaded from GGUF: 151851 vocab, 151387 merges
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
   Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] KV backend: CUDA0 (CPU threads: 16)
+[Prompt] cot=full, songs=1, variations=1, 1 tracks
+[Pipeline] Replay: 1621 frames supplied
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[NAR] Song 0: 1621 frames (64.8 s), prefix 633, 1 chunk of 11970, 1 variation
 load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
 load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
 load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
@@ -10,20 +20,18 @@ load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-
 [Qwen3] Attn: Q+K+V fused
 [Qwen3] MLP: gate+up fused
 [WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
-[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[Store] Load LM: 421 ms
+[Store] Unload LM (4131.5 MB)
 [GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
-[Load] NAR backend: CUDA0 (shared)
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] NAR backend: CUDA0 (CPU threads: 16)
 [NAR] Attn: Q+K+V fused
 [NAR] MLP: gate+up fused
-[WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
+[WeightCtx] Loaded 317 tensors, 2698.0 MB into backend
 [NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
-[GGUF] ../models/YuE2-Vae-F32.gguf: 435 tensors, data at offset 32800
-[Load] VAE backend: CUDA0 (shared)
-[VAE] Backend: CUDA0, Weight buffer: 126.7 MB
-[VAE] Loaded: 6 blocks, upsample=1920x, F32 activations
-[Prompt] cot=full, songs=1, variations=1, 1 tracks
-[Pipeline] Replay: 1621 frames supplied
-[NAR] Song 0: 1621 frames (64.8 s), prefix 633, 1 chunk of 11970, 1 variation
+[Store] Load NAR: 246 ms
 [Debug] ar_ids: [2255] first4: 151643.000000 31115.000000 264.000000 43221.000000
 [Debug] noise: [1621, 64] first4: 1.926915 1.487284 0.900717 -2.105521
 [NAR] Graph: 1247 nodes, T_lat=1621, variations=1, prefix=2255, set=0
@@ -38,7 +46,7 @@ load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-
 [Debug] nar_step0_first: [1621, 64] first4: 3.481477 2.324614 0.858441 -2.637219
 [Debug] nar_step0_second: [1621, 64] first4: 3.403423 2.359239 0.799711 -2.762552
 [Debug] nar_step0_xt: [1621, 64] first4: 1.820558 1.413558 0.875726 -2.019192
-[NAR] Step 1/32, 123 ms
+[NAR] Step 1/32, 120 ms
 [Debug] nar_step1_first: [1621, 64] first4: 3.360500 2.359999 0.773062 -2.819955
 [Debug] nar_step1_second: [1621, 64] first4: 3.343312 2.350078 0.764166 -2.849762
 [Debug] nar_step1_xt: [1621, 64] first4: 1.716080 1.340118 0.851846 -1.930137
@@ -46,7 +54,7 @@ load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-
 [Debug] nar_step2_first: [1621, 64] first4: 3.346227 2.345597 0.756910 -2.848886
 [Debug] nar_step2_second: [1621, 64] first4: 3.338482 2.327302 0.760103 -2.845008
 [Debug] nar_step2_xt: [1621, 64] first4: 1.611752 1.267390 0.828093 -1.841230
-[NAR] Step 3/32, 73 ms
+[NAR] Step 3/32, 72 ms
 [Debug] nar_step3_first: [1621, 64] first4: 3.334297 2.311812 0.759684 -2.842200
 [Debug] nar_step3_second: [1621, 64] first4: 3.341961 2.304603 0.763627 -2.833982
 [Debug] nar_step3_xt: [1621, 64] first4: 1.507316 1.195371 0.804229 -1.752668
@@ -134,15 +142,15 @@ load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-
 [Debug] nar_step24_first: [1621, 64] first4: 3.099914 1.847961 0.662632 -2.249519
 [Debug] nar_step24_second: [1621, 64] first4: 3.095884 1.821964 0.649604 -2.212969
 [Debug] nar_step24_xt: [1621, 64] first4: -0.623685 -0.184299 0.338146 -0.067946
-[NAR] Step 25/32, 74 ms
+[NAR] Step 25/32, 83 ms
 [Debug] nar_step25_first: [1621, 64] first4: 3.068512 1.791842 0.649372 -2.182250
 [Debug] nar_step25_second: [1621, 64] first4: 3.050245 1.758795 0.647347 -2.121717
 [Debug] nar_step25_xt: [1621, 64] first4: -0.719005 -0.239262 0.317916 -0.001643
-[NAR] Step 26/32, 74 ms
+[NAR] Step 26/32, 73 ms
 [Debug] nar_step26_first: [1621, 64] first4: 3.039486 1.702822 0.641720 -2.075074
 [Debug] nar_step26_second: [1621, 64] first4: 3.012263 1.666990 0.635894 -2.004952
 [Debug] nar_step26_xt: [1621, 64] first4: -0.813138 -0.291355 0.298045 0.061012
-[NAR] Step 27/32, 74 ms
+[NAR] Step 27/32, 73 ms
 [Debug] nar_step27_first: [1621, 64] first4: 2.982869 1.618001 0.615947 -1.938410
 [Debug] nar_step27_second: [1621, 64] first4: 2.937577 1.545124 0.593450 -1.847441
 [Debug] nar_step27_xt: [1621, 64] first4: -0.904938 -0.339640 0.279499 0.118745
@@ -164,15 +172,26 @@ load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-
 [Debug] nar_step31_xt: [1621, 64] first4: -1.194859 -0.484561 0.247468 0.263209
 [NAR] Step 32/32, 74 ms
 [Debug] nar_x0: [1621, 64] first4: -1.194859 -0.484561 0.247468 0.263209
-[NAR] Solved: T_lat=1621, 1 variations, 32 steps, 2409 ms (75.3 ms/step)
-[NAR] Song 0 chunk 1/1: 1621 frames, cache 2255 rows, 2.5 s
+[NAR] Solved: T_lat=1621, 1 variations, 32 steps, 2411 ms (75.3 ms/step)
+[NAR] Song 0 chunk 1/1: 1621 frames, cache 2255 rows, 3.2 s
+[Store] Unload NAR (2698.0 MB)
+[GGUF] ../models/YuE2-Vae-F32.gguf: 435 tensors, data at offset 32800
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] VAE backend: CUDA0 (CPU threads: 16)
+[VAE] Backend: CUDA0, Weight buffer: 126.7 MB
+[VAE] Loaded: 6 blocks, upsample=1920x, F32 activations
+[Store] Load VAE: 340 ms
 [VAE] Track 1/1: song 0 variation 0
-[VAE] Tiled decode: 2 tiles (core=1024, halo=16)
-[VAE] Graph: 571 nodes, T_latent=1040
-[VAE] Graph: 571 nodes, T_latent=613
-[VAE] Tiled decode done: 2 tiles -> T_audio=3112256 (64.84s @ 48kHz), 257 ms
-[Debug] vae_audio: [3112256, 2] first4: 0.000400 0.001518 -0.001409 -0.000277
-[Pipeline] Done: 1 tracks, 64.8 s of audio in 2.8 s (23.5x realtime)
+[VAE] Tiled decode: 4 tiles (core=512, halo=16)
+[VAE] Graph: 571 nodes, T_latent=528
+[VAE] Graph: 571 nodes, T_latent=544
+[VAE] Graph: 571 nodes, T_latent=101
+[VAE] Tiled decode done: 4 tiles -> T_audio=3112256 (64.84s @ 48kHz), 256 ms
+[Debug] vae_audio: [3112256, 2] first4: 0.000386 0.001507 -0.001400 -0.000273
+[Pipeline] Done: 1 tracks, 64.8 s of audio in 3.8 s (17.0x realtime)
+[Store] Unload VAE (126.7 MB)
 [WAV] Wrote ggml-nar/output.wav: 3112256 samples, 48000 Hz, stereo
 [Synth] Done: 64.8 s of audio, seeds 42 and 42 -> ggml-nar/output.wav
 [Request] Loaded request0.json
@@ -217,7 +236,7 @@ nar_step30_xt: ggml vs python 0.999999
 nar_step31_first: ggml vs python 0.999992
 nar_step31_second: ggml vs python 0.999994
 nar_x0: ggml vs python 0.999999
-vae_audio: ggml vs python 0.999990
+vae_audio: ggml vs python 0.999991
 vae_audio (STFT cosine): ggml vs python 0.999999
 [NAR] Error growth GGML vs Python
 nar_step0_xt: cos 1.000000, max_err 0.000521, mean_err 0.000058, mean_A -0.000294, std_A 0.974463, mean_B -0.000294, std_B 0.974478
