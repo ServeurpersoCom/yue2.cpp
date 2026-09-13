@@ -49,9 +49,10 @@ struct Yue2PipelineParams {
 };
 
 struct Yue2Pipeline {
-    ModelStore *       store = nullptr;  // borrowed, owned by the tool
-    std::string        model_path;       // the backbone GGUF, both halves and the tokenizer
+    ModelStore *       store = nullptr;   // borrowed, owned by the tool
+    std::string        model_path;        // the backbone GGUF, both halves and the tokenizer
     std::string        vae_path;
+    std::string        transcriber_path;  // the SheetSage2 GGUF, empty without one
     Yue2PipelineParams params;
     DebugDumper        dumper;
 
@@ -174,6 +175,33 @@ static Yue2NAR * require_nar(Yue2Pipeline * p) {
 static VAEGGML * require_vae(Yue2Pipeline * p) {
     ModelKey k = { MODEL_VAE, p->vae_path };
     return store_require_vae(p->store, k);
+}
+
+static SheetSage2 * require_ss2(Yue2Pipeline * p) {
+    ModelKey     k = { MODEL_SS2, p->transcriber_path };
+    SheetSage2 * m = store_require_ss2(p->store, k);
+    if (m) {
+        m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
+    }
+    return m;
+}
+
+// A recording to its ABC score, the melody voices alone unless the chords
+// are wanted. The transcriber holds the GPU for the call and steps aside
+// after it like the other stages.
+static bool pipeline_transcribe(Yue2Pipeline * p,
+                                const float *  audio,
+                                int            n_samples,
+                                bool           chords,
+                                std::string *  abc,
+                                std::string *  error) {
+    SheetSage2 * m = require_ss2(p);
+    if (!m) {
+        *error = "transcriber unavailable";
+        return false;
+    }
+    ModelHandle hold(p->store, m);
+    return ss2_transcribe(m, audio, n_samples, !chords, abc, error, &p->dumper);
 }
 
 // The cache of one generate: the stages grow it to the sets they need, a

@@ -37,6 +37,7 @@ export interface Yue2Props {
 	version: string;
 	model: string;
 	vae: string;
+	transcriber: string; // the SheetSage2 GGUF, empty when the server has none
 	sample_rate: number;
 	frame_rate: number;
 	context: number;

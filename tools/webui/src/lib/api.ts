@@ -22,6 +22,28 @@ export function synthSubmit(req: Yue2Request, format: string): Promise<string> {
 	});
 }
 
+// POST /transcribe (multipart): submit a recording, returns job ID. The
+// request part carries cot: melody keeps the melody voices alone, full keeps
+// the chord symbols.
+export function transcribeSubmit(audio: Blob, chords: boolean): Promise<string> {
+	const form = new FormData();
+	form.append('audio', audio, 'input.audio');
+	form.append(
+		'request',
+		new Blob([JSON.stringify({ cot: chords ? 'full' : 'melody' })], { type: 'application/json' }),
+		'request.json'
+	);
+	return submitJob('transcribe', { method: 'POST', body: form });
+}
+
+// GET /job?id=X&result=1: fetch a transcribe result, the request whose abc
+// is the score and whose cot names what it keeps.
+export async function jobResultTranscribe(id: string): Promise<Yue2Request> {
+	const res = await fetch(`job?id=${encodeURIComponent(id)}&result=1`);
+	if (!res.ok) throw new Error(`${res.status} Result not ready`);
+	return res.json();
+}
+
 // GET /job?id=X: poll job status
 export async function jobStatus(id: string): Promise<string> {
 	const res = await fetch(`job?id=${encodeURIComponent(id)}`, {

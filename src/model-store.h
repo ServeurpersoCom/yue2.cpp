@@ -17,8 +17,9 @@
 //       The pipeline interleaves some modules at a granularity where
 //       evicting between them would thrash, so eviction operates on
 //       groups, not single modules:
-//         AR    = { LM }        the score and semantic stages
-//         SYNTH = { NAR, VAE }  the flow matching and the decode, per song
+//         AR         = { LM }        the score and semantic stages
+//         SYNTH      = { NAR, VAE }  the flow matching and the decode, per song
+//         TRANSCRIBE = { SS2 }       the audio to score transcriber
 //       Modules in the same group coexist freely. A require from another
 //       group evicts every idle module of the resident group.
 //
@@ -54,6 +55,7 @@
 #include "bpe.h"
 #include "nar.h"
 #include "qwen3-lm.h"
+#include "sheetsage.h"
 #include "vae.h"
 
 #include <cstddef>
@@ -65,6 +67,7 @@ enum ModelKind {
     MODEL_LM,   // Qwen3LM  the AR half of the backbone GGUF
     MODEL_NAR,  // Yue2NAR  the NAR half of the same GGUF
     MODEL_VAE,  // VAEGGML  from the VAE GGUF
+    MODEL_SS2,  // SheetSage2 from the transcriber GGUF
 };
 
 struct ModelKey {
@@ -88,9 +91,10 @@ EvictPolicy  store_policy(const ModelStore * s);
 // matching release. In EVICT_STRICT, require evicts every module outside
 // its coexistence group whose refcount is zero; if any conflicting module
 // has refcount > 0 the store aborts (a programming error in the caller).
-Qwen3LM * store_require_lm(ModelStore * s, const ModelKey & k);
-Yue2NAR * store_require_nar(ModelStore * s, const ModelKey & k);
-VAEGGML * store_require_vae(ModelStore * s, const ModelKey & k);
+Qwen3LM *    store_require_lm(ModelStore * s, const ModelKey & k);
+Yue2NAR *    store_require_nar(ModelStore * s, const ModelKey & k);
+VAEGGML *    store_require_vae(ModelStore * s, const ModelKey & k);
+SheetSage2 * store_require_ss2(ModelStore * s, const ModelKey & k);
 
 // Release decrements the refcount for the module behind this handle.
 // Pass exactly the pointer returned by require. After release, the pointer

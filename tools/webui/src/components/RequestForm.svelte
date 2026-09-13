@@ -108,6 +108,13 @@
 
 		const ext = file.name.split('.').pop()?.toLowerCase() || '';
 
+		// MP3 or WAV: a song card with the audio alone, transcribed from the
+		// card into a score
+		if (ext === 'mp3' || ext === 'wav') {
+			openAudio(file, ext);
+			return;
+		}
+
 		// JSON and YAML share the same load path: parse, push the request into
 		// the form, and use the file basename as app.name.
 		const parsers: Record<string, (s: string) => Yue2Request> = {
@@ -136,6 +143,30 @@
 			.catch(() => {
 				toast(`Invalid ${ext.toUpperCase()} file`);
 			});
+	}
+
+	// open audio file: create song card with audio only (no server call).
+	// use Transcribe on the card to read its score.
+	async function openAudio(file: File, ext: string) {
+		const blob = new Blob([await file.arrayBuffer()], {
+			type: ext === 'wav' ? 'audio/wav' : 'audio/mpeg'
+		});
+		const name = file.name.replace(/\.(mp3|wav)$/i, '') || 'Imported';
+		const song: Song = {
+			name,
+			format: ext,
+			created: Date.now(),
+			style: '',
+			seed: 0,
+			duration: 0,
+			score: '',
+			request: { style: '', lyrics: '', abc_sampling: {}, semantic_sampling: {} },
+			audio: blob
+		};
+		song.id = await putSong(song);
+		app.songs.unshift(song);
+		app.name = name;
+		toast('Opened: ' + name, 4000, true);
 	}
 
 	// snapshot app.request into a clean Yue2Request with proper types.
@@ -218,7 +249,7 @@
 <form class="request-form" onsubmit={(e) => e.preventDefault()}>
 	<input
 		type="file"
-		accept=".json,.yml,.yaml"
+		accept=".json,.yml,.yaml,.mp3,.wav"
 		bind:this={fileInput}
 		onchange={onFileSelected}
 		hidden

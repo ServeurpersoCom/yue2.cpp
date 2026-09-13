@@ -3,6 +3,7 @@
 // Runs the SheetSage2 transcriber on a recording and writes the ABC score
 // it hears: melody voices alone by default, the score the cover path of
 // YuE2 takes as its abc with cot melody, or with the chord symbols kept.
+#include "audio-io.h"
 #include "sheetsage.h"
 #include "version.h"
 
@@ -68,8 +69,10 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
+    int                T = 0, sr = 0;
+    float *            planar = audio_read(audio_path, &T, &sr);
     std::vector<float> audio;
-    if (!ss2_load_audio(audio_path, &audio)) {
+    if (!planar || !ss2_mono_24k(planar, T, sr, &audio)) {
         fprintf(stderr, "[Transcribe] FATAL: cannot read %s\n", audio_path);
         return 1;
     }

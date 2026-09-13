@@ -28,10 +28,11 @@ namespace {
 enum ModelGroup {
     GROUP_AR,
     GROUP_SYNTH,
+    GROUP_TRANSCRIBE,
 };
 
 static ModelGroup group_of(ModelKind kind) {
-    return kind == MODEL_LM ? GROUP_AR : GROUP_SYNTH;
+    return kind == MODEL_LM ? GROUP_AR : (kind == MODEL_SS2 ? GROUP_TRANSCRIBE : GROUP_SYNTH);
 }
 
 struct ModelKeyHash {
@@ -188,6 +189,11 @@ static void del_vae(void * p) {
     delete static_cast<VAEGGML *>(p);
 }
 
+static void del_ss2(void * p) {
+    ss2_free(static_cast<SheetSage2 *>(p));
+    delete static_cast<SheetSage2 *>(p);
+}
+
 // Weight buffer size helpers: the two halves expose a WeightCtx at
 // m->wctx.buffer, the VAE exposes m->buf directly.
 static size_t bytes_of_lm(const Qwen3LM * m) {
@@ -200,6 +206,10 @@ static size_t bytes_of_nar(const Yue2NAR * m) {
 
 static size_t bytes_of_vae(const VAEGGML * m) {
     return m && m->buf ? ggml_backend_buffer_get_size(m->buf) : 0;
+}
+
+static size_t bytes_of_ss2(const SheetSage2 * m) {
+    return m && m->wctx.buffer ? ggml_backend_buffer_get_size(m->wctx.buffer) : 0;
 }
 
 Qwen3LM * store_require_lm(ModelStore * s, const ModelKey & k) {
@@ -250,6 +260,24 @@ VAEGGML * store_require_vae(ModelStore * s, const ModelKey & k) {
     vae_ggml_load(m, k.path.c_str());
     install_entry(s, k, m, bytes_of_vae(m), "VAE", del_vae);
     fprintf(stderr, "[Store] Load VAE: %.0f ms\n", t.ms());
+    return m;
+}
+
+SheetSage2 * store_require_ss2(ModelStore * s, const ModelKey & k) {
+    if (auto * hit = cache_hit<SheetSage2>(s, k)) {
+        return hit;
+    }
+    if (s->policy == EVICT_STRICT) {
+        evict_conflicts(s, k);
+    }
+    Timer        t;
+    SheetSage2 * m = new SheetSage2();
+    if (!ss2_load(m, k.path.c_str())) {
+        delete m;
+        return nullptr;
+    }
+    install_entry(s, k, m, bytes_of_ss2(m), "SS2", del_ss2);
+    fprintf(stderr, "[Store] Load SS2: %.0f ms\n", t.ms());
     return m;
 }
 

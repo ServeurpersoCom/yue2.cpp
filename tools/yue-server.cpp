@@ -417,6 +417,7 @@ static Yue2Pipeline g_pipeline;
 static bool         g_keep_loaded = false;
 static std::string  g_model_path;
 static std::string  g_vae_path;
+static std::string  g_transcriber_path;
 
 static void on_signal(int) {
     active_job_cancel();
@@ -449,6 +450,7 @@ static void handle_props(const httplib::Request &, httplib::Response & res) {
     yyjson_mut_obj_add_str(doc, root, "version", YUE2_VERSION);
     yyjson_mut_obj_add_strncpy(doc, root, "model", g_model_path.c_str(), g_model_path.size());
     yyjson_mut_obj_add_strncpy(doc, root, "vae", g_vae_path.c_str(), g_vae_path.size());
+    yyjson_mut_obj_add_strncpy(doc, root, "transcriber", g_transcriber_path.c_str(), g_transcriber_path.size());
     yyjson_mut_obj_add_int(doc, root, "sample_rate", YUE2_SAMPLE_RATE);
     yyjson_mut_obj_add_int(doc, root, "frame_rate", YUE2_FRAME_RATE);
     yyjson_mut_obj_add_int(doc, root, "context", YUE2_CONTEXT);
@@ -515,6 +517,30 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
     return true;
 }
 
+// Transcribe worker: the uploaded recording becomes the score of a request,
+// abc filled and cot set, melody voices alone for cot melody and the chords
+// kept for cot full. The result is that request as JSON.
+static void run_transcribe(std::shared_ptr<Job> job, std::vector<float> audio, bool chords) {
+    active_job_set(job);
+    fprintf(stderr, "[Server] Transcribe job %s: %.1f s of audio, %s\n", job->id.c_str(),
+            (double) audio.size() / SS2_SAMPLE_RATE, chords ? "chords kept" : "melody only");
+    std::string abc, error;
+    bool        ok = pipeline_transcribe(&g_pipeline, audio.data(), (int) audio.size(), chords, &abc, &error);
+    active_job_set(nullptr);
+    if (!ok) {
+        fprintf(stderr, "[Server] Transcribe job %s failed: %s\n", job->id.c_str(), error.c_str());
+        job->status.store(job->cancel.load() ? JobStatus::CANCELLED : JobStatus::FAILED);
+        return;
+    }
+    Yue2Request r;
+    request_init(&r);
+    r.abc            = abc;
+    r.cot            = chords ? "full" : "melody";
+    job->result_body = request_to_json(&r, false);
+    job->result_mime = "application/json";
+    job->status.store(JobStatus::DONE);
+}
+
 static void run_job(std::shared_ptr<Job> job, Yue2Request request) {
     active_job_set(job);
     fprintf(stderr, "[Server] Job %s: %s\n", job->id.c_str(), request_to_json(&request).c_str());
@@ -573,6 +599,7 @@ static void print_usage(const char * prog) {
             "  --vae <gguf>           VAE GGUF\n"
             "\n"
             "Optional:\n"
+            "  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe\n"
             "  --host <addr>          Listen address (default: 0.0.0.0)\n"
             "  --port <N>             Listen port (default: 8087)\n"
             "  --max-batch <N>        Song batch limit, one KV set each (default: 1)\n"
@@ -603,6 +630,8 @@ int main(int argc, char ** argv) {
             g_model_path = argv[++i];
         } else if (!strcmp(argv[i], "--vae") && !last) {
             g_vae_path = argv[++i];
+        } else if (!strcmp(argv[i], "--transcriber") && !last) {
+            g_transcriber_path = argv[++i];
         } else if (!strcmp(argv[i], "--host") && !last) {
             host = argv[++i];
         } else if (!strcmp(argv[i], "--port") && !last) {
@@ -643,7 +672,8 @@ int main(int argc, char ** argv) {
     // Model loads go through the store: STRICT by default (one half of the
     // backbone resident at a time, the cache staying between them), NEVER
     // with --keep-loaded (everything accumulates)
-    g_pipeline.store = store_create(g_keep_loaded ? EVICT_NEVER : EVICT_STRICT);
+    g_pipeline.store            = store_create(g_keep_loaded ? EVICT_NEVER : EVICT_STRICT);
+    g_pipeline.transcriber_path = g_transcriber_path;
     if (!pipeline_configure(&g_pipeline, g_model_path.c_str(), g_vae_path.c_str(), params)) {
         store_free(g_pipeline.store);
         return 1;
@@ -671,6 +701,44 @@ int main(int argc, char ** argv) {
         }
         auto job = job_create();
         work_push([job, request] { run_job(job, request); });
+        res.set_content(json_string("id", job->id), "application/json");
+    });
+
+    // POST /transcribe, multipart/form-data: an "audio" part (WAV or MP3)
+    // and an optional "request" JSON part whose cot decides between the
+    // melody voices alone (melody, the default) and the chords kept (full)
+    svr.Post("/transcribe", [](const httplib::Request & req, httplib::Response & res) {
+        if (g_transcriber_path.empty()) {
+            res.status = 501;
+            res.set_content(json_string("error", "transcription requires --transcriber"), "application/json");
+            return;
+        }
+        if (!req.is_multipart_form_data() || !req.form.has_file("audio")) {
+            res.status = 400;
+            res.set_content(json_string("error", "multipart audio part required"), "application/json");
+            return;
+        }
+        bool chords = false;
+        if (req.form.has_file("request")) {
+            Yue2Request r;
+            if (!request_parse_json(&r, req.form.get_file("request").content.c_str())) {
+                res.status = 400;
+                res.set_content(json_string("error", "invalid JSON"), "application/json");
+                return;
+            }
+            chords = r.cot == "full";
+        }
+        const std::string & file = req.form.get_file("audio").content;
+        int                 T = 0, sr = 0;
+        float *             planar = audio_read_buf((const uint8_t *) file.data(), file.size(), &T, &sr);
+        std::vector<float>  audio;
+        if (!planar || !ss2_mono_24k(planar, T, sr, &audio)) {
+            res.status = 400;
+            res.set_content(json_string("error", "cannot decode audio"), "application/json");
+            return;
+        }
+        auto job = job_create();
+        work_push([job, audio, chords] { run_transcribe(job, audio, chords); });
         res.set_content(json_string("id", job->id), "application/json");
     });
 

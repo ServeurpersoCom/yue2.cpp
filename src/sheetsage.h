@@ -13,7 +13,7 @@
 // reference does, the global response norm of the frontend spans the whole
 // window and would move with the padding otherwise.
 
-#include "audio-io.h"
+#include "audio-resample.h"
 #include "backend.h"
 #include "debug.h"
 #include "gguf-weights.h"
@@ -269,10 +269,10 @@ static void ss2_load_tokenizer(SheetSage2 * m, const char * json) {
     yyjson_doc_free(doc);
 }
 
-// weights
-
+// weights, in the type the GGUF holds: F32 for the kernels, norms, tables
+// and positions, the quant of the file for the linear projections
 static struct ggml_tensor * ss2_t(WeightCtx * w, const GGUFModel & gf, const std::string & name) {
-    return gf_load_tensor_f32(w, gf, name);
+    return gf_load_tensor(w, gf, name);
 }
 
 static void ss2_load_convnext(WeightCtx * w, const GGUFModel & gf, SS2ConvNext * l, const std::string & p) {
@@ -1545,14 +1545,9 @@ static bool ss2_transcribe(SheetSage2 *        m,
     return ok;
 }
 
-// Any audio file to the 24 kHz mono waveform the model reads: the channels
-// averaged, the rate converted
-static bool ss2_load_audio(const char * path, std::vector<float> * out) {
-    int     T = 0, sr = 0;
-    float * planar = audio_read(path, &T, &sr);
-    if (!planar) {
-        return false;
-    }
+// Decoded planar stereo to the 24 kHz mono waveform the model reads: the
+// channels averaged, the rate converted
+static bool ss2_mono_24k(float * planar, int T, int sr, std::vector<float> * out) {
     std::vector<float> mono((size_t) T);
     for (int i = 0; i < T; i++) {
         mono[(size_t) i] = 0.5f * (planar[i] + planar[T + i]);

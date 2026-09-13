@@ -220,6 +220,15 @@ static float * audio_io_read_wav(const char * path, int * T_out, int * sr_out) {
     return result;
 }
 
+// Decode WAV or MP3 from a memory buffer, the RIFF magic telling them apart.
+// Returns planar stereo float [L: T][R: T]. Caller frees.
+static float * audio_read_buf(const uint8_t * data, size_t size, int * T_out, int * sr_out) {
+    if (size >= 4 && memcmp(data, "RIFF", 4) == 0) {
+        return audio_io_read_wav_buf(data, size, T_out, sr_out);
+    }
+    return audio_io_read_mp3_buf(data, size, T_out, sr_out);
+}
+
 // Read WAV or MP3 (auto-detect from extension).
 // Returns planar stereo float [L: T][R: T]. Caller frees.
 static float * audio_read(const char * path, int * T_out, int * sr_out) {
