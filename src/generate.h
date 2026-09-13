@@ -32,17 +32,22 @@ static void yue2_prefill(Qwen3LM *                             lm,
                          int                                   first_set,
                          int                                   i,
                          float *                               logits,
-                         int                                   V) {
-    int s = first_set + i;
+                         int                                   V,
+                         const char *                          label) {
+    int   s = first_set + i;
+    Timer timer;
     for (int j = 0; j < i; j++) {
         if (prefixes[j] == prefixes[i]) {
             qw3lm_copy_kv(lm, first_set + j, s);
             memcpy(logits + (size_t) s * V, logits + (size_t) (first_set + j) * V, (size_t) V * sizeof(float));
+            fprintf(stderr, "[AR] %s song %d: %zu tokens copied from song %d, %.0f ms\n", label, i, prefixes[i].size(),
+                    j, timer.ms());
             return;
         }
     }
     qw3lm_reset_kv(lm, s);
     qw3lm_forward(lm, prefixes[i].data(), (int) prefixes[i].size(), s, logits + (size_t) s * V);
+    fprintf(stderr, "[AR] %s song %d: %zu tokens prefilled, %.0f ms\n", label, i, prefixes[i].size(), timer.ms());
 }
 
 // Guidance of exactly one keeps a single branch, which is the nominal path in
@@ -94,15 +99,15 @@ static bool yue2_generate(Qwen3LM *                             lm,
 
     Timer prefill_timer;
     for (int i = 0; i < B; i++) {
-        yue2_prefill(lm, prefixes, 0, i, batched.data(), V);
+        yue2_prefill(lm, prefixes, 0, i, batched.data(), V, label);
     }
     if (guided) {
         for (int i = 0; i < B; i++) {
-            yue2_prefill(lm, negatives, B, i, batched.data(), V);
+            yue2_prefill(lm, negatives, B, i, batched.data(), V, "Unconditional");
         }
     }
-    fprintf(stderr, "[AR] %s prefill: %.0f ms, %zu tokens, CFG=%.2f, top_k=%d, budget=%d, sequences=%d\n", label,
-            prefill_timer.ms(), prefixes[0].size(), (double) cfg_scale, s.top_k, s.max_tokens, B);
+    fprintf(stderr, "[AR] %s prefill: %.0f ms, CFG=%.2f, top_k=%d, budget=%d, songs=%d, batch=%d\n", label,
+            prefill_timer.ms(), (double) cfg_scale, s.top_k, s.max_tokens, B, N);
 
     out->assign((size_t) B, { {}, true });
 
@@ -138,7 +143,7 @@ static bool yue2_generate(Qwen3LM *                             lm,
                 if (token == end) {
                     g.truncated = false;
                     owed[i]     = 1;
-                    fprintf(stderr, "[AR] %s %d: end token at step %d\n", label, i, step);
+                    fprintf(stderr, "[AR] %s song %d: end token at step %d\n", label, i, step);
                 } else {
                     g.tokens.push_back(token);
                     if ((int) g.tokens.size() >= s.max_tokens) {
@@ -169,9 +174,12 @@ static bool yue2_generate(Qwen3LM *                             lm,
 
     size_t total = 0;
     for (int i = 0; i < B; i++) {
-        total += (*out)[i].tokens.size();
+        const Yue2Generation & g = (*out)[i];
+        total += g.tokens.size();
+        fprintf(stderr, "[AR] %s song %d: %zu tokens%s\n", label, i, g.tokens.size(),
+                g.truncated ? " (truncated)" : "");
     }
-    fprintf(stderr, "[AR] %s: %zu tokens over %d sequences, %d steps, %.1f s (%.1f ms/step)\n", label, total, B, step,
+    fprintf(stderr, "[AR] %s: %zu tokens over %d songs, %d steps, %.1f s (%.1f ms/step)\n", label, total, B, step,
             timer.ms() / 1000.0, step > 0 ? timer.ms() / step : 0.0);
     return true;
 }
