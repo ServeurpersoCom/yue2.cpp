@@ -138,7 +138,8 @@ int main(int argc, char ** argv) {
         cfg.max_seq_len = max_seq;
     }
     Qw3lmKvCache kv;
-    if (!qw3lm_kv_alloc(&kv, cfg, lm.backend, 1)) {
+    qw3lm_kv_init(&kv, cfg, lm.backend);
+    if (!qw3lm_kv_sets(&kv, 1)) {
         qw3lm_kv_free(&kv);
         qw3lm_free(&lm);
         return 1;

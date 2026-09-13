@@ -79,7 +79,8 @@ int main(int argc, char ** argv) {
     }
     lm.clamp_fp16 = clamp;
     Qw3lmKvCache kv;
-    if (!qw3lm_kv_alloc(&kv, lm.cfg, lm.backend, 1)) {
+    qw3lm_kv_init(&kv, lm.cfg, lm.backend);
+    if (!qw3lm_kv_sets(&kv, 1)) {
         return 1;
     }
 

@@ -11,7 +11,9 @@
 // released after it, so the store can keep one half in VRAM at a time. The
 // KV cache belongs to the pipeline: the NAR reads the cache the AR decode
 // left complete, end token included, so a generated song that fits one
-// chunk never prefills, and the cache outlives both halves.
+// chunk never prefills, and the cache outlives both halves. It lives for
+// one generate under the strict policy, so the GPU is empty between
+// requests, and stays under --keep-loaded.
 
 #include "generate.h"
 #include "model-store.h"
@@ -53,7 +55,8 @@ struct Yue2Pipeline {
     Yue2PipelineParams params;
     DebugDumper        dumper;
 
-    // The cache and the backend it lives on, held for the process lifetime
+    // The cache, bound at configure to its config with the context override
+    // and to the shared backend, held for the process lifetime
     Qw3lmKvCache kv;
     BackendPair  kv_backend;
     bool         configured = false;
@@ -101,10 +104,9 @@ static std::string pipeline_format_tokens(const std::vector<int> & tokens) {
     return csv;
 }
 
-// Record the paths and the knobs, load the tokenizer, allocate one cache set
-// on the shared backend: the guided path and the batch grow it on demand,
-// and guidance is the exception, not the nominal mode. No GPU module loads
-// here, the first generate requires them.
+// Record the paths and the knobs, load the tokenizer, read the backbone
+// config the cache is sized from. No GPU module loads here, the first
+// generate requires them and allocates the cache.
 static bool pipeline_configure(Yue2Pipeline *             p,
                                const char *               model_path,
                                const char *               vae_path,
@@ -131,9 +133,7 @@ static bool pipeline_configure(Yue2Pipeline *             p,
         cfg.max_seq_len = params.max_seq;
     }
     p->kv_backend = backend_init("KV");
-    if (!qw3lm_kv_alloc(&p->kv, cfg, p->kv_backend.backend, 1)) {
-        return false;
-    }
+    qw3lm_kv_init(&p->kv, cfg, p->kv_backend.backend);
     p->configured = true;
     return true;
 }
@@ -176,6 +176,19 @@ static VAEGGML * require_vae(Yue2Pipeline * p) {
     return store_require_vae(p->store, k);
 }
 
+// The cache of one generate: the stages grow it to the sets they need, a
+// replay to the one set its prefill fills. Freed on every exit under the
+// strict policy, kept under the other.
+struct KvScope {
+    Yue2Pipeline * p;
+
+    ~KvScope() {
+        if (store_policy(p->store) == EVICT_STRICT) {
+            qw3lm_kv_free(&p->kv);
+        }
+    }
+};
+
 static bool pipeline_cot(const std::string & name, Yue2Cot * cot) {
     for (const Yue2CotMode & m : YUE2_COT_MODES) {
         if (name == m.name) {
@@ -208,6 +221,8 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     if (!yue2_sampling_valid(r.abc_sampling, "abc") || !yue2_sampling_valid(r.semantic_sampling, "semantic")) {
         return false;
     }
+
+    KvScope kv_scope = { p };
 
     BPETokenizer * tok    = store_bpe(p->store, p->model_path.c_str());
     auto           encode = [tok](const std::string & text) {
@@ -342,6 +357,9 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     // the prefill of a chunk
     std::optional<ModelHandle> nar_hold;
     Yue2NAR *                  nar = nullptr;
+    if (!qw3lm_kv_sets(&p->kv, 1)) {
+        return false;
+    }
     for (int i = 0; i < B; i++) {
         const int prefix_len = (int) prefixes[i].size();
         const int chunk_size = (context - prefix_len - 3) / 2;

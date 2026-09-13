@@ -113,7 +113,8 @@ frame.
 Only one module is in VRAM at a time. The AR half is evicted once the
 codes are written, the NAR half loads, is evicted in turn, and the VAE
 loads; the KV cache stays through all of it, so the halves trade places
-around it and nothing is recomputed. `--keep-loaded` keeps everything
+around it and nothing is recomputed, and once the track is out the
+cache goes too, nothing stays on the GPU between two requests. `--keep-loaded` keeps everything
 resident on a card with the budget.
 
 VRAM: the cache sized on the 24576 token context is the other big term,

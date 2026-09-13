@@ -203,16 +203,36 @@ static void qw3lm_init_backend(Qwen3LM * m) {
     m->clamp_fp16     = false;
 }
 
-// Allocate the cache of n_sets sets on its backend
-static bool qw3lm_kv_alloc(Qw3lmKvCache * kv, const Qwen3LMConfig & cfg, ggml_backend_t backend, int n_sets) {
-    int D   = cfg.head_dim;
-    int Nkv = cfg.n_kv_heads;
-    int L   = cfg.n_layers;
-    int S   = cfg.max_seq_len;
-
+// Bind a cache to its config and backend, no set allocated yet
+static void qw3lm_kv_init(Qw3lmKvCache * kv, const Qwen3LMConfig & cfg, ggml_backend_t backend) {
+    *kv         = {};
     kv->cfg     = cfg;
     kv->backend = backend;
-    kv->n_sets  = n_sets;
+}
+
+// Free the sets, the binding stays
+static void qw3lm_kv_free(Qw3lmKvCache * kv) {
+    if (kv->buf) {
+        ggml_backend_buffer_free(kv->buf);
+    }
+    if (kv->ctx) {
+        ggml_free(kv->ctx);
+    }
+    kv->buf    = nullptr;
+    kv->ctx    = nullptr;
+    kv->n_sets = 0;
+}
+
+// Allocate n_sets sets on the backend, replacing whatever the cache held
+static bool qw3lm_kv_alloc(Qw3lmKvCache * kv, int n_sets) {
+    const Qwen3LMConfig & cfg = kv->cfg;
+    int                   D   = cfg.head_dim;
+    int                   Nkv = cfg.n_kv_heads;
+    int                   L   = cfg.n_layers;
+    int                   S   = cfg.max_seq_len;
+
+    qw3lm_kv_free(kv);
+    kv->n_sets = n_sets;
 
     // 4D tensors [D, S, Nkv, n_sets] + 3D views [D, S, Nkv] per set
     int                     n_tensors = L * 2 + n_sets * L * 2;  // 4D + views
@@ -241,7 +261,7 @@ static bool qw3lm_kv_alloc(Qw3lmKvCache * kv, const Qwen3LMConfig & cfg, ggml_ba
         kv->pos[s] = 0;
     }
 
-    kv->buf = ggml_backend_alloc_ctx_tensors(kv->ctx, backend);
+    kv->buf = ggml_backend_alloc_ctx_tensors(kv->ctx, kv->backend);
     if (!kv->buf) {
         fprintf(stderr, "[LM-KV] FATAL: failed to allocate KV cache\n");
         return false;
@@ -258,27 +278,15 @@ static bool qw3lm_kv_alloc(Qw3lmKvCache * kv, const Qwen3LMConfig & cfg, ggml_ba
     return true;
 }
 
-static void qw3lm_kv_free(Qw3lmKvCache * kv) {
-    if (kv->buf) {
-        ggml_backend_buffer_free(kv->buf);
-    }
-    if (kv->ctx) {
-        ggml_free(kv->ctx);
-    }
-    *kv = {};
-}
-
-// Grow the cache to the requested number of sets. The guided path and the
-// batch ask for it before any prefill, so nothing is lost here; the graphs
-// that read the cache key on its tensors and rebuild.
+// Grow the cache to the requested number of sets, from none on the first
+// call. The guided path and the batch ask for it before any prefill, so
+// nothing is lost here; the graphs that read the cache key on its tensors
+// and rebuild.
 static bool qw3lm_kv_sets(Qw3lmKvCache * kv, int n_sets) {
     if (n_sets <= kv->n_sets) {
         return true;
     }
-    Qwen3LMConfig  cfg     = kv->cfg;
-    ggml_backend_t backend = kv->backend;
-    qw3lm_kv_free(kv);
-    return qw3lm_kv_alloc(kv, cfg, backend, n_sets);
+    return qw3lm_kv_alloc(kv, n_sets);
 }
 
 // Replicate one set into another, position included: a prefix shared by

@@ -79,6 +79,7 @@ enum EvictPolicy {
 
 ModelStore * store_create(EvictPolicy policy);
 void         store_free(ModelStore * s);
+EvictPolicy  store_policy(const ModelStore * s);
 
 // Typed GPU module accessors. Each returns a pointer owned by the store;
 // never free it yourself. Returns NULL on load failure.

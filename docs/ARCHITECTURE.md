@@ -132,12 +132,15 @@ instance. A conflicting require while a module of another group is still
 held aborts: the strict invariant is enforced, not documented.
 
 The KV cache is not a module. The AR fills it and the NAR reads it, so
-it belongs to the pipeline (`Qw3lmKvCache`, allocated by
-`pipeline_configure()` on the shared backend) and survives every
-eviction: that is what lets the two halves of one GGUF trade places in
-VRAM around it. A song that fits one chunk swaps once; a replayed stream
-prefills with the AR half then swaps; a song longer than one context
-window swaps around every chunk, which the store logs.
+it belongs to the pipeline (`Qw3lmKvCache`, bound to the shared backend
+by `pipeline_configure()`) and survives every eviction: that is what
+lets the two halves of one GGUF trade places in VRAM around it. It is
+allocated at the sets a request needs and freed at the end of the
+request under STRICT, so nothing stays on the GPU between two requests;
+under `--keep-loaded` it stays with the modules. A song that fits one
+chunk swaps once; a replayed stream prefills with the AR half then
+swaps; a song longer than one context window swaps around every chunk,
+which the store logs.
 
 Weight buffers per module, measured at load on CUDA:
 
@@ -189,7 +192,8 @@ frame.
 Only one module is in VRAM at a time. The AR half is evicted once the
 codes are written, the NAR half loads, is evicted in turn, and the VAE
 loads; the KV cache stays through all of it, so the halves trade places
-around it and nothing is recomputed. `--keep-loaded` keeps everything
+around it and nothing is recomputed, and once the track is out the
+cache goes too, nothing stays on the GPU between two requests. `--keep-loaded` keeps everything
 resident on a card with the budget.
 
 Frame rate: 48000 / 1920 = 25 Hz, the semantic stream and the acoustic

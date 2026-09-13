@@ -147,6 +147,10 @@ ModelStore * store_create(EvictPolicy policy) {
     return s;
 }
 
+EvictPolicy store_policy(const ModelStore * s) {
+    return s->policy;
+}
+
 void store_free(ModelStore * s) {
     if (!s) {
         return;
