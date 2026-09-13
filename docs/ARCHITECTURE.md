@@ -771,29 +771,24 @@ close on another.
 
 `debug-nar-cossim.py` isolates the acoustic stack from the stochastic AR:
 the GGML side runs the full pipeline with `--dump` on the shared
-`tests/request0.json`, which carries its semantic stream so the
-autoregression reduces to one prefill, then the python side reloads the
-dumped AR sequence and noise, prefills the reference backbone into a
-`CachedNAR` (CUDA float32), walks the same midpoint schedule and decodes
-with the reference VAE. It reports per-probe cosines (timestep embedding,
-latent block input, layer 0 attention, named layers 0 / 7 / 14 / 21 / 27,
-per-step velocities and states, final latents, decoded audio + STFT
-cosine) and the error growth across steps.
+`tests/request0.json`, the reference example **City Lights** (English
+warm piano pop, a verse and a chorus) with its planned score and its
+semantic stream frozen in the file, so the autoregression reduces to
+one prefill. The python
+side reloads the dumped AR sequence and noise, prefills the reference
+backbone into a `CachedNAR` (CUDA float32), walks the same midpoint
+schedule and decodes with the reference VAE. It reports per-probe
+cosines (timestep embedding, latent block input, layer 0 attention,
+named layers 0 / 7 / 14 / 21 / 27, per-step velocities and states, final
+latents, decoded audio + STFT cosine) and the error growth across steps.
 
 `./debug-nar-cossim.sh` archives the campaign as
 `{backend}-[NOFUSION-]{quant}.log` over CUDA0 / Vulkan0 / CPU, fusion on
 and off, quants BF16 / Q8_0 / Q6_K / Q5_K_M, every run on the attention
 path the backend executes by default. The backbone quant varies, the
-VAE stays F32, and the same semantic stream feeds every run: the delta
-is the pure backbone quant effect on the prefill and the flow matching.
-
-Headline `nar_x0` / STFT cosines: CUDA0 BF16 0.999997 / 0.999986, Q8_0
-0.999527 / 0.999278, Q6_K 0.996752 / 0.996812, Q5_K_M 0.997275 /
-0.997256; Vulkan0 BF16 0.999996 / 0.999989, Q8_0 0.999752 / 0.999666,
-Q6_K 0.996519 / 0.996018, Q5_K_M 0.996925 / 0.996851; CPU BF16 0.999998
-/ 0.999994, Q8_0 0.999662 / 0.999626, Q6_K 0.996665 / 0.996254, Q5_K_M
-0.996283 / 0.996323. Same level per quant on the three backends, Q6_K
-and Q5_K_M side by side, fusion on and off within 1e-4.
+VAE stays F32, and the same score and semantic stream feed every run:
+the delta is the pure backbone quant effect on the prefill and the flow
+matching of a 64.8 s song.
 
 The F32 attention fallback of `--no-fa` is not the path of the campaign,
 and on Vulkan0 it is wrong: `test-lm` in that mode fails at 0.34
