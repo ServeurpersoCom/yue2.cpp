@@ -25,3 +25,8 @@ target_include_directories(test-rng PRIVATE ${CMAKE_SOURCE_DIR}/src)
 # test-draw: token draw parity harness, pure CPU, no ggml.
 add_executable(test-draw test-draw.cpp)
 target_include_directories(test-draw PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# test-sheetsage: SheetSage2 transcriber parity harness against the torch reference.
+add_executable(test-sheetsage test-sheetsage.cpp)
+target_link_libraries(test-sheetsage PRIVATE yyjson)
+link_ggml_backends(test-sheetsage)
