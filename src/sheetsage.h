@@ -17,6 +17,7 @@
 #include "debug.h"
 #include "gguf-weights.h"
 #include "graph-arena.h"
+#include "notation.h"
 #include "timer.h"
 #include "weight-ctx.h"
 #include "yyjson.h"
@@ -56,9 +57,10 @@ struct SS2Tokenizer {
     int n_tokens, pad, sos, eos, out;
     int prompt0, prompt1, shift0, shift1, time0, time1, meter0, meter1, eighth0, eighth1, structure0, structure1, key0,
         key1, majmin0, majmin1, chord0, chord1, pitch0, pitch1, duration0, duration1;
-    std::vector<std::string> prompts, structures, majmin_chords, chords;
+    std::vector<std::string> prompts, structures, majmin_chords, chords, chords_abc, keys, keys_abc;
     std::vector<int>         meter_num, meter_den, duration_templates;
     std::vector<float>       duration_boundaries;
+    NotTables                tables;  // chord and key labels -> ABC spelling
 };
 
 struct SS2ConvNext {
@@ -238,6 +240,15 @@ static void ss2_load_tokenizer(SheetSage2 * m, const char * json) {
     ss2_json_strings(root, "structures", &t.structures);
     ss2_json_strings(root, "majmin_chords", &t.majmin_chords);
     ss2_json_strings(root, "full_chords", &t.chords);
+    ss2_json_strings(root, "full_chords_abc", &t.chords_abc);
+    ss2_json_strings(root, "keys", &t.keys);
+    ss2_json_strings(root, "keys_abc", &t.keys_abc);
+    for (size_t i = 0; i < t.chords.size(); i++) {
+        t.tables.chord_abc[t.chords[i]] = t.chords_abc[i];
+    }
+    for (size_t i = 0; i < t.keys.size(); i++) {
+        t.tables.key_abc[t.keys[i]] = t.keys_abc[i];
+    }
     yyjson_val * meters = ss2_json_arr(root, "meters");
     size_t       idx, max;
     yyjson_val * v;
@@ -1137,5 +1148,159 @@ static bool ss2_generate(SheetSage2 *             m,
     }
     fprintf(stderr, "[SheetSage] Decoded: %zu tokens, %.1f s (%.1f ms/token)\n", tokens->size(), timer.ms() / 1000.0,
             timer.ms() / (double) tokens->size());
+    return true;
+}
+
+// The token stream of a window becomes timed events: subbeat shifts
+// accumulate the step, the fields of an event follow in the order the
+// grammar imposes, the timestamps anchor a step to seconds map that places
+// every event and every note end, then the events are offset by the window
+// start and clipped to the song like the reference stitching does.
+static bool ss2_decode_events(const SS2Config &        c,
+                              const SS2Tokenizer &     t,
+                              const std::vector<int> & tokens,
+                              double                   window_start,
+                              double                   song_duration,
+                              std::vector<NotEvent> *  events) {
+    events->clear();
+    size_t out_index = 0;
+    for (size_t i = 1; i < tokens.size(); i++) {
+        if (tokens[i] == t.out) {
+            out_index = i;
+            break;
+        }
+    }
+    if (tokens.empty() || tokens[0] != t.sos || out_index == 0) {
+        fprintf(stderr, "[SheetSage] FATAL: token stream without prefix\n");
+        return false;
+    }
+    std::vector<double> anchor_steps, anchor_times;
+    size_t              position = out_index + 1;
+    int                 step     = 0;
+    while (position < tokens.size() && tokens[position] != t.eos) {
+        while (position < tokens.size() && ss2_kind(t, tokens[position]) == SS2_KIND_SHIFT) {
+            step += tokens[position] - t.shift0;
+            position++;
+        }
+        NotEvent e;
+        e.subbeat      = step;
+        double stamp   = 0.0;
+        bool   payload = false;
+        while (position < tokens.size()) {
+            int     token = tokens[position];
+            SS2Kind kind  = ss2_kind(t, token);
+            if (kind == SS2_KIND_SHIFT || token == t.eos) {
+                break;
+            }
+            payload = true;
+            switch (kind) {
+                case SS2_KIND_TIME:
+                    e.has_timestamp = true;
+                    stamp           = (double) (token - t.time0) / c.time_hz;
+                    break;
+                case SS2_KIND_METER:
+                    e.has_meter = true;
+                    e.meter_num = t.meter_num[(size_t) (token - t.meter0)];
+                    e.meter_den = t.meter_den[(size_t) (token - t.meter0)];
+                    break;
+                case SS2_KIND_EIGHTH:
+                    e.eighth = token - t.eighth0;
+                    break;
+                case SS2_KIND_STRUCTURE:
+                    e.structure = t.structures[(size_t) (token - t.structure0)];
+                    break;
+                case SS2_KIND_KEY:
+                    e.key = t.keys[(size_t) (token - t.key0)];
+                    break;
+                case SS2_KIND_MAJMIN:
+                    e.chord = t.majmin_chords[(size_t) (token - t.majmin0)];
+                    break;
+                case SS2_KIND_CHORD:
+                    e.chord = t.chords[(size_t) (token - t.chord0)];
+                    break;
+                case SS2_KIND_PITCH:
+                    {
+                        int pitch_id = token - t.pitch0;
+                        int bin      = 0;
+                        if (position + 1 < tokens.size() && ss2_kind(t, tokens[position + 1]) == SS2_KIND_DURATION) {
+                            bin = tokens[position + 1] - t.duration0;
+                            position++;
+                        }
+                        e.melody.push_back(
+                            { pitch_id % 128, pitch_id >= 128, t.duration_templates[(size_t) bin], 0.0 });
+                        break;
+                    }
+                default:
+                    fprintf(stderr, "[SheetSage] FATAL: token %d has no field\n", token);
+                    return false;
+            }
+            position++;
+        }
+        if (!payload) {
+            continue;
+        }
+        if (e.has_timestamp) {
+            // A later timestamp at the same step replaces the earlier one
+            if (!anchor_steps.empty() && anchor_steps.back() == step) {
+                anchor_times.back() = stamp;
+            } else {
+                anchor_steps.push_back(step);
+                anchor_times.push_back(stamp);
+            }
+        }
+        events->push_back(e);
+    }
+
+    // Steps to seconds: linear between anchors, the median step length
+    // beyond them, an eighth of a second per step without any
+    double step_seconds = 0.125;
+    if (anchor_steps.size() >= 2) {
+        std::vector<double> rates;
+        for (size_t i = 0; i + 1 < anchor_steps.size(); i++) {
+            rates.push_back((anchor_times[i + 1] - anchor_times[i]) /
+                            std::max(anchor_steps[i + 1] - anchor_steps[i], 1.0));
+        }
+        double median = not_median(rates);
+        if (std::isfinite(median) && median > 0) {
+            step_seconds = median;
+        }
+    }
+    double window_length = c.window_seconds;
+    auto   lookup        = [&](double s) {
+        if (anchor_steps.empty()) {
+            return std::min(window_length, std::max(0.0, s * 0.125));
+        }
+        if (s <= anchor_steps.front()) {
+            return std::min(window_length,
+                                     std::max(0.0, anchor_times.front() + (s - anchor_steps.front()) * step_seconds));
+        }
+        if (s >= anchor_steps.back()) {
+            return std::min(window_length,
+                                     std::max(0.0, anchor_times.back() + (s - anchor_steps.back()) * step_seconds));
+        }
+        size_t hi = 1;
+        while (anchor_steps[hi] < s) {
+            hi++;
+        }
+        double a = anchor_steps[hi - 1], b = anchor_steps[hi];
+        return anchor_times[hi - 1] + (anchor_times[hi] - anchor_times[hi - 1]) * (s - a) / (b - a);
+    };
+    std::vector<NotEvent> accepted;
+    for (NotEvent & e : *events) {
+        double abs_time = window_start + lookup(e.subbeat);
+        if (abs_time >= song_duration - 1e-4) {
+            continue;
+        }
+        e.time = std::min(song_duration, std::max(0.0, abs_time));
+        for (NotNote & n : e.melody) {
+            double end = window_start + lookup(e.subbeat + n.duration_steps);
+            n.end_time = std::min(song_duration, std::max(e.time + 0.04, end));
+        }
+        accepted.push_back(e);
+    }
+    std::stable_sort(accepted.begin(), accepted.end(), [](const NotEvent & a, const NotEvent & b) {
+        return std::tie(a.time, a.subbeat) < std::tie(b.time, b.subbeat);
+    });
+    *events = accepted;
     return true;
 }

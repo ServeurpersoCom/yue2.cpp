@@ -82,6 +82,25 @@ int main(int argc, char ** argv) {
         fprintf(f, "%d\n", id);
     }
     fclose(f);
+
+    // The score, full and melody only, the way the reference writes them
+    double                duration = (double) got / SS2_SAMPLE_RATE;
+    std::vector<NotEvent> events;
+    if (!ss2_decode_events(m.cfg, m.tok, tokens, 0.0, duration, &events)) {
+        return 1;
+    }
+    for (int melody_only = 0; melody_only < 2; melody_only++) {
+        std::string abc, error;
+        if (!notation_abc(events, duration, m.tok.tables, melody_only, &abc, &error)) {
+            fprintf(stderr, "[Test-SheetSage] ABC unavailable: %s\n", error.c_str());
+            return 1;
+        }
+        path = std::string(argv[3]) + (melody_only ? "/score-melody.abc" : "/score.abc");
+        f    = fopen(path.c_str(), "w");
+        fwrite(abc.data(), 1, abc.size(), f);
+        fclose(f);
+    }
+    fprintf(stderr, "[Test-SheetSage] %zu events, scores written\n", events.size());
     ss2_decoder_free(&dec);
     ss2_free(&m);
     return 0;

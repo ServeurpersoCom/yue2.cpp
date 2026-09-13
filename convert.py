@@ -266,6 +266,12 @@ def transcriber_tokenizer_json(model_dir, cfg):
         ranges[kind] = [getattr(t, kind + "_token_start"), getattr(t, kind + "_token_end")]
     if t.appended_token_blocks:
         raise SystemExit("appended token blocks are not handled")
+    # The ABC spelling of every chord and key label, so the C++ carries no
+    # pitch spelling logic: the notation module of the checkpoint decides
+    notation = importlib.import_module(os.path.basename(model_dir) + ".notation_sheetsage2")
+    chord_abc = [notation.chord_symbol_to_abc(label) or "" for label in t.full_chord_labels]
+    key_labels = ["%s:%s" % (module.CHROMATIC_SHARPS[i % 12], "minor" if i >= 12 else "major") for i in range(24)]
+    key_abc = [notation.key_symbol_to_abc(label) for label in key_labels]
     table = {
         "n_tokens": t.n_tokens,
         "fingerprint": t.vocab_fingerprint,
@@ -276,6 +282,9 @@ def transcriber_tokenizer_json(model_dir, cfg):
         "structures": list(t.structure_labels),
         "majmin_chords": list(t.majmin_chord_labels),
         "full_chords": list(t.full_chord_labels),
+        "full_chords_abc": chord_abc,
+        "keys": key_labels,
+        "keys_abc": key_abc,
         "duration_templates": [int(x) for x in t.duration_templates],
         "duration_boundaries": [float(x) for x in t.duration_boundaries],
     }
