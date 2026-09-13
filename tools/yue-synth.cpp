@@ -133,11 +133,6 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    if (r.style.empty() && r.lyrics.empty()) {
-        fprintf(stderr, "[Synth] ERROR: the request carries neither style nor lyrics\n\n");
-        print_usage(argv[0]);
-        return 1;
-    }
     request_resolve_seed(&r);
 
     bool      is_mp3  = false;

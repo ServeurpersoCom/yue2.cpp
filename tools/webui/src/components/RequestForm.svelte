@@ -155,10 +155,6 @@
 		busy = true;
 		try {
 			const req = buildRequest();
-			if (!req.style?.trim() || !req.lyrics?.trim()) {
-				toast('Style and lyrics are required');
-				return;
-			}
 			// Both seeds are resolved here so the stored request replays the
 			// exact track, the token draw and the acoustic noise alike
 			const userLmSeed = num(req.lm_seed);

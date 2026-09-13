@@ -511,11 +511,6 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
         res.set_content(json_string("error", "sampling preset outside the protocol bounds"), "application/json");
         return false;
     }
-    if (r->style.empty() && r->lyrics.empty()) {
-        res.status = 400;
-        res.set_content(json_string("error", "style or lyrics required"), "application/json");
-        return false;
-    }
     request_resolve_seed(r);
     return true;
 }

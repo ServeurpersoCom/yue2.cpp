@@ -100,12 +100,6 @@ int main(int argc, char ** argv) {
         print_usage(argv[0]);
         return 1;
     }
-    if (r.style.empty() && r.lyrics.empty()) {
-        fprintf(stderr, "[Plan] ERROR: the request carries neither style nor lyrics\n\n");
-        print_usage(argv[0]);
-        return 1;
-    }
-
     Yue2Cot cot;
     if (r.cot == "full") {
         cot = YUE2_COT_FULL;

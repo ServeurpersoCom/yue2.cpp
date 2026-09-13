@@ -465,7 +465,9 @@ the server rejects a request with neither.
 **`style`** (string)
 Style tags fed to the model, reaching it verbatim under the `[Tags]`
 header. Comma separated descriptors are what the checkpoint was trained
-on. See `tools/webui/example/` for complete requests.
+on. See `tools/webui/example/` for complete requests. Both `style` and
+`lyrics` accept the empty string, as in the reference: the model then
+composes on its own.
 
 **`lyrics`** (string)
 Song lyrics with their structural tags, verbatim under the `[Lyrics]`
@@ -646,8 +648,7 @@ POST /synth                     Submit a generation job, returns job ID
   response: {"id":"1a2b..."}
   400 on malformed JSON, unknown cot mode, unknown output_format,
   steps < 1, lm_batch_size outside [1, --max-batch], synth_batch_size
-  outside [1, 9], a sampling preset outside the protocol bounds, or a
-  request with neither style nor lyrics
+  outside [1, 9], or a sampling preset outside the protocol bounds
 
 GET  /job?id=N                  Poll job status
   response: {"status":"running|done|failed|cancelled"}
