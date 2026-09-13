@@ -249,7 +249,7 @@
 	<div class="section-title">Lyrics</div>
 	<textarea
 		rows="8"
-		placeholder="[Verse]&#10;Write your lyrics here..."
+		placeholder={'[Verse]\nWrite your lyrics here...'}
 		bind:value={app.request.lyrics}
 	></textarea>
 
@@ -267,7 +267,7 @@
 	</div>
 	<textarea
 		rows="8"
-		placeholder="ABC notation. Left empty the model writes one.&#10;X:1&#10;L:1/8&#10;M:4/4&#10;K:Cmaj&#10;&quot;C&quot;c2 e2 g2 c'2|"
+		placeholder={'ABC notation. Left empty the model writes one.\nX:1\nL:1/8\nM:4/4\nK:Cmaj\n"C"c2 e2 g2 c\'2|'}
 		bind:value={app.request.abc}
 	></textarea>
 
