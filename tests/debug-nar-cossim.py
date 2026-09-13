@@ -115,7 +115,7 @@ def run_ggml(dump_dir, req, quant):
 
     model = f"../models/YuE2-3B-{quant}.gguf"
     cmd = [ggml_bin, "--model", model, "--vae", "../models/YuE2-Vae-F32.gguf", "--request", request_json,
-           "--dump", dump_dir, "--no-fa", "--out", os.path.join(dump_dir, "output.wav")]
+           "--dump", dump_dir, "--out", os.path.join(dump_dir, "output.wav")]
     print(f"[GGML] Running YuE2-3B-{quant}.gguf...")
     r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=None, text=True)
     n = len([f for f in os.listdir(dump_dir) if f.endswith(".bin")])
