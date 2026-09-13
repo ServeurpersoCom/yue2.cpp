@@ -144,9 +144,12 @@
 		return buildSparse(app.request);
 	}
 
-	// Example: pick a random official demo prompt and fill the form
+	// Example: pick a random official demo prompt, fill the form and name
+	// the song after it
 	function pickExample() {
-		setRequest(example());
+		const ex = example();
+		setRequest(ex.request);
+		app.name = ex.title;
 	}
 
 	// Generate: submit the request, poll until done, land the song card.

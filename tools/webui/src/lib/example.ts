@@ -12,15 +12,19 @@ const examples: Record<string, unknown>[] = Object.values(modules).map(
 		(m as { default?: Record<string, unknown> }).default ?? (m as Record<string, unknown>)
 );
 
-// pick a random example and return a Yue2Request
-export function example(): Yue2Request {
+// pick a random example: its title names the song like an imported file
+// does, the rest is the request
+export function example(): { title: string; request: Yue2Request } {
 	const ex = examples[Math.floor(Math.random() * examples.length)];
 	return {
-		style: String(ex.style),
-		lyrics: String(ex.lyrics),
-		cot: String(ex.cot ?? 'full'),
-		abc: ex.abc ? String(ex.abc) : undefined,
-		abc_sampling: {},
-		semantic_sampling: {}
+		title: String(ex.title ?? ''),
+		request: {
+			style: String(ex.style),
+			lyrics: String(ex.lyrics),
+			cot: String(ex.cot ?? 'full'),
+			abc: ex.abc ? String(ex.abc) : undefined,
+			abc_sampling: {},
+			semantic_sampling: {}
+		}
 	};
 }
