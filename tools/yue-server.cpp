@@ -414,6 +414,7 @@ static void worker_main() {
 }
 
 static Yue2Pipeline g_pipeline;
+static bool         g_keep_loaded = false;
 static std::string  g_model_path;
 static std::string  g_vae_path;
 
@@ -579,10 +580,11 @@ static void print_usage(const char * prog) {
             "  --host <addr>          Listen address (default: 0.0.0.0)\n"
             "  --port <N>             Listen port (default: 8087)\n"
             "  --max-batch <N>        Song batch limit, one KV set each (default: 1)\n"
+            "  --keep-loaded          Keep every model resident in VRAM (default: evict between stages)\n"
             "\n"
             "Debug:\n"
             "  --max-seq <N>          KV cache size (default: model context)\n"
-            "  --vae-core <N>         VAE tile core frames (default: 1024)\n"
+            "  --vae-core <N>         VAE tile core frames (default: 512)\n"
             "  --vae-halo <N>         VAE tile halo frames (default: 16)\n"
             "  --no-fa                Disable flash attention\n"
             "  --clamp-fp16           Clamp hidden states to FP16 range\n",
@@ -609,6 +611,8 @@ int main(int argc, char ** argv) {
             host = argv[++i];
         } else if (!strcmp(argv[i], "--port") && !last) {
             port = atoi(argv[++i]);
+        } else if (!strcmp(argv[i], "--keep-loaded")) {
+            g_keep_loaded = true;
         } else if (!strcmp(argv[i], "--max-batch") && !last) {
             params.max_batch = atoi(argv[++i]);
             if (params.max_batch < 1) {
@@ -640,7 +644,12 @@ int main(int argc, char ** argv) {
 
     LogCapture log_capture;
 
-    if (!pipeline_load(&g_pipeline, g_model_path.c_str(), g_vae_path.c_str(), params)) {
+    // Model loads go through the store: STRICT by default (one half of the
+    // backbone resident at a time, the cache staying between them), NEVER
+    // with --keep-loaded (everything accumulates)
+    g_pipeline.store = store_create(g_keep_loaded ? EVICT_NEVER : EVICT_STRICT);
+    if (!pipeline_configure(&g_pipeline, g_model_path.c_str(), g_vae_path.c_str(), params)) {
+        store_free(g_pipeline.store);
         return 1;
     }
 
@@ -722,5 +731,6 @@ int main(int argc, char ** argv) {
     cv_work.notify_all();
     worker.join();
     pipeline_free(&g_pipeline);
+    store_free(g_pipeline.store);
     return 0;
 }

@@ -74,16 +74,21 @@ int main(int argc, char ** argv) {
     }
 
     Qwen3LM lm;
-    if (!qw3lm_load(&lm, gguf_path, 0, 1)) {
+    if (!qw3lm_load(&lm, gguf_path)) {
         return 1;
     }
     lm.clamp_fp16 = clamp;
+    Qw3lmKvCache kv;
+    if (!qw3lm_kv_alloc(&kv, lm.cfg, lm.backend, 1)) {
+        return 1;
+    }
 
-    Yue2NAR nar = {};
-    if (!nar_load(&nar, &lm, gguf_path)) {
+    Yue2NAR nar;
+    if (!nar_load(&nar, gguf_path)) {
         qw3lm_free(&lm);
         return 1;
     }
+    nar.clamp_fp16 = clamp;
 
     std::vector<float> x_t((size_t) nar.latent_dim * T_lat * M);
     if (!read_all(xt_path, x_t.data(), x_t.size() * sizeof(float))) {
@@ -94,7 +99,7 @@ int main(int argc, char ** argv) {
 
     // Fill KV set 0 with the AR prefix, which is the NAR prefix cache
     std::vector<float> logits(lm.cfg.vocab_size);
-    qw3lm_forward(&lm, ids.data(), ar_len, 0, logits.data(), 0, lm.cfg.vocab_size);
+    qw3lm_forward(&lm, &kv, ids.data(), ar_len, 0, logits.data(), 0, lm.cfg.vocab_size);
 
     std::vector<float> result(x_t.size());
     bool               ok;
@@ -102,9 +107,9 @@ int main(int argc, char ** argv) {
     debug_init(&quiet, nullptr);
     if (solve) {
         result = x_t;
-        ok     = nar_solve(&nar, result.data(), T_lat, M, ar_len, 0, steps, &quiet);
+        ok     = nar_solve(&nar, &kv, result.data(), T_lat, M, ar_len, 0, steps, &quiet);
     } else {
-        ok = nar_velocity(&nar, x_t.data(), T_lat, M, ar_len, 0, raw_t, result.data());
+        ok = nar_velocity(&nar, &kv, x_t.data(), T_lat, M, ar_len, 0, raw_t, result.data());
     }
     if (!ok) {
         nar_free(&nar);
@@ -122,6 +127,7 @@ int main(int argc, char ** argv) {
     fclose(out);
 
     nar_free(&nar);
+    qw3lm_kv_free(&kv);
     qw3lm_free(&lm);
     if (solve) {
         fprintf(stderr, "[Test-NAR] Prefix %d tokens, T_lat=%d, M=%d, %d midpoint steps\n", ar_len, T_lat, M, steps);

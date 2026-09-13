@@ -85,11 +85,41 @@ Open http://localhost:8087 in your browser. The WebUI handles everything:
 write style tags and lyrics, generate, read the score the model composed,
 play and download tracks.
 
-Both GGUF are resident for the whole session: the backbone carries the
-autoregressive and the non-autoregressive weight sets in one file, and
-the KV cache sized on the 24576 token context dominates the residency,
-one set per song of a batch. `--max-seq` and `--max-batch` are the levers
-that trade context and batch for VRAM.
+## Pipeline
+
+```
+style tags + lyrics
+        v
+LM, Autoregressive (AR)            writes the ABC score, then the semantic codes at 25 Hz,
+        v  evict / load            and leaves everything in the KV cache
+LM, Non-Autoregressive (NAR)       reads that cache and paints the acoustic latents by flow
+        v  evict / load            matching, 64 channels per frame, all frames at once
+VAE, Oobleck decoder               1920x upsample -> 48 kHz stereo
+```
+
+One backbone GGUF holds the two halves of a single Qwen3 transformer: the
+same 28 layers with two sets of attention projections and MLPs, one to
+write tokens, one to paint latents, sharing the embeddings and the final
+norm. The AR half works like a language model: token by token, it first
+writes the ABC score, a symbolic plan in plain text you can read and edit,
+then the semantic codes, one per 40 ms frame, and every token it processes
+lands in the KV cache. The NAR half is the same network used the other way
+round: it starts from Gaussian noise for every frame of the song, attends
+on the cache the AR half just left, and refines all the frames together
+with a midpoint flow matching solver, 32 steps of two evaluations, from
+noise to latents. The VAE turns the latents into sound, 1920 samples per
+frame.
+
+Only one module is in VRAM at a time. The AR half is evicted once the
+codes are written, the NAR half loads, is evicted in turn, and the VAE
+loads; the KV cache stays through all of it, so the halves trade places
+around it and nothing is recomputed. `--keep-loaded` keeps everything
+resident on a card with the budget.
+
+VRAM: the cache sized on the 24576 token context is the other big term,
+one set per song of a batch; `--max-seq` and `--max-batch` are the
+levers that trade context and batch for VRAM. A 65 s song in Q8_0 peaks
+at 5.8 GB at the full context and 3.8 GB at `--max-seq 8192`.
 
 ## Server options
 
@@ -104,10 +134,11 @@ Optional:
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
   --max-batch <N>        Song batch limit, one KV set each (default: 1)
+  --keep-loaded          Keep every model resident in VRAM (default: evict between stages)
 
 Debug:
   --max-seq <N>          KV cache size (default: model context)
-  --vae-core <N>         VAE tile core frames (default: 1024)
+  --vae-core <N>         VAE tile core frames (default: 512)
   --vae-halo <N>         VAE tile halo frames (default: 16)
   --no-fa                Disable flash attention
   --clamp-fp16           Clamp hidden states to FP16 range

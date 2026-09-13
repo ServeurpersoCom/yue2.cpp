@@ -126,11 +126,23 @@ int main(int argc, char ** argv) {
     }
 
     Qwen3LM lm;
-    if (!qw3lm_load(&lm, model_path, max_seq, 1)) {
+    if (!qw3lm_load(&lm, model_path)) {
         return 1;
     }
     lm.use_flash_attn = lm.use_flash_attn && !no_fa;
     lm.clamp_fp16     = clamp_fp16;
+
+    // One cache set on the backend of the weights, the plan runs unguided
+    Qwen3LMConfig cfg = lm.cfg;
+    if (max_seq > 0) {
+        cfg.max_seq_len = max_seq;
+    }
+    Qw3lmKvCache kv;
+    if (!qw3lm_kv_alloc(&kv, cfg, lm.backend, 1)) {
+        qw3lm_kv_free(&kv);
+        qw3lm_free(&lm);
+        return 1;
+    }
 
     // The score slot stays open: this stage is the one that fills it
     std::vector<int> prefix = yue2_build_prompt_ids([&tok](const std::string & text) { return bpe_encode(&tok, text); },
@@ -142,6 +154,7 @@ int main(int argc, char ** argv) {
             csv += (i ? "," : "") + std::to_string(prefix[i]);
         }
         if (!write_file(dump_path, csv + "\n")) {
+            qw3lm_kv_free(&kv);
             qw3lm_free(&lm);
             return 1;
         }
@@ -149,7 +162,9 @@ int main(int argc, char ** argv) {
 
     // One plan: the batch counters of the request belong to the song pipeline
     std::vector<Yue2Generation> plans;
-    if (!yue2_generate(&lm, { prefix }, {}, 1.0f, r.abc_sampling, r.lm_seed, YUE2_PHASE_ABC, &plans)) {
+    if (!yue2_generate(&lm, &kv, std::vector<std::vector<int>>(1, prefix), {}, 1.0f, r.abc_sampling, r.lm_seed,
+                       YUE2_PHASE_ABC, &plans)) {
+        qw3lm_kv_free(&kv);
         qw3lm_free(&lm);
         return 1;
     }
@@ -157,10 +172,12 @@ int main(int argc, char ** argv) {
 
     std::string score = bpe_decode(&tok, plan.tokens);
     if (!write_file(out_path, score)) {
+        qw3lm_kv_free(&kv);
         qw3lm_free(&lm);
         return 1;
     }
 
+    qw3lm_kv_free(&kv);
     qw3lm_free(&lm);
     fprintf(stderr, "[Plan] Prefix %zu tokens, score %zu tokens%s, seed %lld -> %s\n", prefix.size(),
             plan.tokens.size(), plan.truncated ? " (truncated)" : "", (long long) r.lm_seed, out_path);

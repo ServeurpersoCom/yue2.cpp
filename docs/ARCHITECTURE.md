@@ -111,37 +111,86 @@ always take Q6_K, 1D norms and biases are promoted to F32, and the VAE is
 never quantized (its architecture is recognized by the `yue2-vae` value of
 `general.architecture`).
 
-## VRAM
+## VRAM and model residency
 
-Everything stays resident for the whole session. Measured at load on
-CUDA with the native BF16 backbone:
+Module loads go through a `ModelStore` (`src/model-store.h`), the single
+owner of the GGML module instances. The pipeline borrows modules through
+refcounted RAII handles (`ModelHandle`), stage by stage, and the store
+decides what stays in VRAM following its eviction policy:
 
-| Buffer | Size |
-|--------|------|
-| Backbone, autoregressive weight set (311 tensors) | 4131.5 MB |
-| Backbone, non-autoregressive weight set (316 tensors) | 2698.0 MB |
-| VAE decoder | 126.7 MB |
-| KV cache, 2 sets x 28 layers at the 24576 context | 5376.0 MB |
+- `EVICT_STRICT` (default, hardcoded in the CLIs): at most one
+  coexistence group resident at a time. The AR group `{ LM }` runs the
+  score and the semantic stages, the synthesis group `{ NAR, VAE }` the
+  flow matching and the decode, so when the synthesis group is required
+  the AR half has been released and is unloaded. The two halves of the
+  backbone never coexist, the peak is the larger one.
+- `EVICT_NEVER` (`yue-server --keep-loaded`): nothing is ever evicted,
+  modules accumulate, which is the layout of a card with the budget.
 
-The KV cache is the dominant term and the only one that scales with a
+A require of an already resident key is a cache hit on the same
+instance. A conflicting require while a module of another group is still
+held aborts: the strict invariant is enforced, not documented.
+
+The KV cache is not a module. The AR fills it and the NAR reads it, so
+it belongs to the pipeline (`Qw3lmKvCache`, allocated by
+`pipeline_configure()` on the shared backend) and survives every
+eviction: that is what lets the two halves of one GGUF trade places in
+VRAM around it. A song that fits one chunk swaps once; a replayed stream
+prefills with the AR half then swaps; a song longer than one context
+window swaps around every chunk, which the store logs.
+
+Weight buffers per module, measured at load on CUDA:
+
+| Module | BF16 | Q8_0 | Q6_K | Q5_K_M |
+|--------|------|------|------|--------|
+| Backbone, AR half (311 tensors) | 4131.5 MB | 2195.1 MB | 1694.8 MB | 1542.4 MB |
+| Backbone, NAR half (316 tensors) | 2698.0 MB | 1433.5 MB | 1107.0 MB | 953.9 MB |
+| VAE decoder | 126.7 MB | | | |
+
+The KV cache is the other big term and the only one that scales with a
 knob: `2 * 28 * 2 * 128 * 8 * max_seq * 2` bytes, so 2688 MB per set at
 the full context. One set per song of the batch, two under classifier
 free guidance, grown on demand; `--max-seq` and `--max-batch` are the
-levers that trade context and batch for VRAM.
+levers that trade context and batch for VRAM. Measured peak above idle
+on a 65 s song in Q8_0 under STRICT: 5.8 GB at the full context, 3.8 GB
+at `--max-seq 8192`, the compute buffers of the three graphs making the
+difference with the weights plus the cache, the VAE tiles first. A cache smaller than the
+default budgets needs a `duration` on the request, the generator refuses
+a prefix plus budget that would not fit.
+
+The cost of STRICT is one reload of each half per song from the page
+cache, about a second on the pod, `--keep-loaded` removes it.
 
 ## Pipeline
 
 ```
-style tags + lyrics (Qwen tiktoken BPE, 151851 text vocab)
+style tags + lyrics
         v
-backbone, autoregressive path        ABC score, chain of thought stage
-        v same weights file
-backbone, autoregressive path        semantic codes, 32768 entries at 25 Hz
-        v KV cache, read not rebuilt
-backbone, non-autoregressive path    flow matching on 64 channel latents
-        v
-Oobleck VAE decoder                  1920x upsample -> 48 kHz stereo
+LM, Autoregressive (AR)            writes the ABC score, then the semantic codes at 25 Hz,
+        v  evict / load            and leaves everything in the KV cache
+LM, Non-Autoregressive (NAR)       reads that cache and paints the acoustic latents by flow
+        v  evict / load            matching, 64 channels per frame, all frames at once
+VAE, Oobleck decoder               1920x upsample -> 48 kHz stereo
 ```
+
+One backbone GGUF holds the two halves of a single Qwen3 transformer: the
+same 28 layers with two sets of attention projections and MLPs, one to
+write tokens, one to paint latents, sharing the embeddings and the final
+norm. The AR half works like a language model: token by token, it first
+writes the ABC score, a symbolic plan in plain text you can read and edit,
+then the semantic codes, one per 40 ms frame, and every token it processes
+lands in the KV cache. The NAR half is the same network used the other way
+round: it starts from Gaussian noise for every frame of the song, attends
+on the cache the AR half just left, and refines all the frames together
+with a midpoint flow matching solver, 32 steps of two evaluations, from
+noise to latents. The VAE turns the latents into sound, 1920 samples per
+frame.
+
+Only one module is in VRAM at a time. The AR half is evicted once the
+codes are written, the NAR half loads, is evicted in turn, and the VAE
+loads; the KV cache stays through all of it, so the halves trade places
+around it and nothing is recomputed. `--keep-loaded` keeps everything
+resident on a card with the budget.
 
 Frame rate: 48000 / 1920 = 25 Hz, the semantic stream and the acoustic
 latents share it, one code per latent frame.
@@ -360,8 +409,12 @@ redraw of the last 16 uniforms.
 
 ### VAE decode and tiling
 
-The decoder runs on tiles of `core` latent frames (default 1024) with a
-`halo` of 16 frames on each side. Each tile decodes
+The decoder runs on tiles of `core` latent frames (default 512) with a
+`halo` of 16 frames on each side. The tile size only moves the peak of
+the F32 activations, about 2 GB per thousand frames, and not the decode
+time, which stays at the compute bound of the convolution stack on the
+GPU; 512 is the setting of the reference for cards up to 12 GB, and it
+costs nothing above. Each tile decodes
 `[start - halo, end + halo)` and keeps only its core samples: the left
 halo scales exactly by 1920 so the crop is exact, and the concatenated
 cores are the same signal a single pass would produce. There is no
@@ -534,7 +587,7 @@ Debug:
   --tokens <path>        Also write the semantic stream (CSV)
   --latent <path>        Also write the acoustic latents (.vae)
   --max-seq <N>          KV cache size (default: model context)
-  --vae-core <N>         VAE tile core frames (default: 1024)
+  --vae-core <N>         VAE tile core frames (default: 512)
   --vae-halo <N>         VAE tile halo frames (default: 16)
   --no-fa                Disable flash attention
   --clamp-fp16           Clamp hidden states to FP16 range
@@ -566,18 +619,20 @@ Optional:
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
   --max-batch <N>        Song batch limit, one KV set each (default: 1)
+  --keep-loaded          Keep every model resident in VRAM (default: evict between stages)
 
 Debug:
   --max-seq <N>          KV cache size (default: model context)
-  --vae-core <N>         VAE tile core frames (default: 1024)
+  --vae-core <N>         VAE tile core frames (default: 512)
   --vae-halo <N>         VAE tile halo frames (default: 16)
   --no-fa                Disable flash attention
   --clamp-fp16           Clamp hidden states to FP16 range
 ```
 
 The debug flags are global to the process and read when a graph is built,
-so they are boot options, not request fields. Both models load at startup
-and stay resident.
+so they are boot options, not request fields. The modules load at the
+first request through the store, one half of the backbone at a time
+unless `--keep-loaded` keeps everything resident.
 
 ### Endpoints
 
@@ -676,7 +731,7 @@ Optional:
   --bitrate <kbps>        MP3 bitrate (default: 128)
 
 Debug:
-  --vae-core <N>          Tile core frames (default: 1024)
+  --vae-core <N>          Tile core frames (default: 512)
   --vae-halo <N>          Tile halo frames (default: 16)
 ```
 

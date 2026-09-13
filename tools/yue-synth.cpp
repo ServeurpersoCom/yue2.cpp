@@ -52,7 +52,7 @@ static void print_usage(const char * prog) {
             "  --tokens <path>        Also write the semantic stream (CSV)\n"
             "  --latent <path>        Also write the acoustic latents (.vae)\n"
             "  --max-seq <N>          KV cache size (default: model context)\n"
-            "  --vae-core <N>         VAE tile core frames (default: 1024)\n"
+            "  --vae-core <N>         VAE tile core frames (default: 512)\n"
             "  --vae-halo <N>         VAE tile halo frames (default: 16)\n"
             "  --no-fa                Disable flash attention\n"
             "  --clamp-fp16           Clamp hidden states to FP16 range\n"
@@ -148,17 +148,25 @@ int main(int argc, char ** argv) {
     }
     std::string target = out_path ? out_path : ("song." + std::string(is_mp3 ? "mp3" : "wav"));
 
+    // Model loads go through the store in STRICT policy: at most one half of
+    // the backbone resident at a time, the cache staying between them
+    ModelStore * store = store_create(EVICT_STRICT);
+
     Yue2Pipeline pipeline;
-    if (!pipeline_load(&pipeline, model_path, vae_path, params)) {
+    pipeline.store = store;
+    if (!pipeline_configure(&pipeline, model_path, vae_path, params)) {
+        store_free(store);
         return 1;
     }
 
     std::vector<Yue2Song> songs;
     if (!pipeline_generate(&pipeline, r, &songs)) {
         pipeline_free(&pipeline);
+        store_free(store);
         return 1;
     }
     pipeline_free(&pipeline);
+    store_free(store);
 
     // A single track lands on the paths as given; a batch numbers each path
     // with song then variation index: song.mp3 -> song00.mp3. Every track

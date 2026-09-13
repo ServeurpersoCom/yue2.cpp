@@ -1,16 +1,20 @@
 #pragma once
 // pipeline.h: YuE2 generation pipeline
 //
-// Holds the two GGUF of a release resident and turns one request into
-// tracks: a symbolic plan, a semantic token stream, the acoustic flow
-// matching solved from the AR prefix cache, and the VAE decode to 48 kHz
-// stereo, for every song of the batch and every noise variation of a song.
+// Turns one request into tracks: a symbolic plan, a semantic token stream,
+// the acoustic flow matching solved from the AR prefix cache, and the VAE
+// decode to 48 kHz stereo, for every song of the batch and every noise
+// variation of a song.
 //
-// The NAR reads the KV cache the AR decode left complete, end token
-// included, so a generated song that fits one chunk never prefills.
+// The modules come from a ModelStore: the AR half for the two token stages,
+// the NAR half and the VAE for the synthesis, required per stage and
+// released after it, so the store can keep one half in VRAM at a time. The
+// KV cache belongs to the pipeline: the NAR reads the cache the AR decode
+// left complete, end token included, so a generated song that fits one
+// chunk never prefills, and the cache outlives both halves.
 
-#include "bpe.h"
 #include "generate.h"
+#include "model-store.h"
 #include "nar.h"
 #include "request.h"
 #include "timer.h"
@@ -19,6 +23,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,29 +32,31 @@
 #define YUE2_LATENT_DIM  64
 #define YUE2_HOP         1920
 
-// VRAM and compatibility knobs. The AR and NAR halves share one KV cache by
-// construction, so there is no eviction group to trade here: max_seq and
-// max_batch are the memory levers, they size the cache that dominates the
-// residency.
+// VRAM and compatibility knobs. The store policy decides which half stays
+// resident; max_seq and max_batch size the cache, which the pipeline owns
+// and never evicts.
 struct Yue2PipelineParams {
     int  max_seq    = 0;              // 0 = model context, the whole 24576
     int  max_batch  = 1;              // song batch limit, one KV set per song, two under guidance
     bool no_fa      = false;          // disable flash attention
     bool clamp_fp16 = false;          // clamp hidden states on sub-Ampere CUDA
-    int  vae_core   = 1024;           // VAE tile core frames
+    int  vae_core   = 512;            // VAE tile core frames
     int  vae_halo   = 16;             // VAE tile halo frames
 
     const char * dump_dir = nullptr;  // probe dumps of the first track for the cossim harness
 };
 
 struct Yue2Pipeline {
-    BPETokenizer       tok;
-    Qwen3LM            lm;
-    Yue2NAR            nar;
-    VAEGGML            vae;
+    ModelStore *       store = nullptr;  // borrowed, owned by the tool
+    std::string        model_path;       // the backbone GGUF, both halves and the tokenizer
+    std::string        vae_path;
     Yue2PipelineParams params;
     DebugDumper        dumper;
-    bool               loaded = false;
+
+    // The cache and the backend it lives on, held for the process lifetime
+    Qw3lmKvCache kv;
+    BackendPair  kv_backend;
+    bool         configured = false;
 };
 
 struct Yue2Song {
@@ -94,48 +101,79 @@ static std::string pipeline_format_tokens(const std::vector<int> & tokens) {
     return csv;
 }
 
-static bool pipeline_load(Yue2Pipeline *             p,
-                          const char *               model_path,
-                          const char *               vae_path,
-                          const Yue2PipelineParams & params) {
-    if (!load_bpe_from_gguf(&p->tok, model_path)) {
-        return false;
-    }
-    // One cache set: the guided path grows it on demand, and guidance is the
-    // exception, not the nominal mode
-    if (!qw3lm_load(&p->lm, model_path, params.max_seq, 1)) {
-        return false;
-    }
-    // Both halves read these, the NAR bakes them into its graph at build time
-    p->lm.use_flash_attn = p->lm.use_flash_attn && !params.no_fa;
-    p->lm.clamp_fp16     = params.clamp_fp16;
-    p->params            = params;
+// Record the paths and the knobs, load the tokenizer, allocate one cache set
+// on the shared backend: the guided path and the batch grow it on demand,
+// and guidance is the exception, not the nominal mode. No GPU module loads
+// here, the first generate requires them.
+static bool pipeline_configure(Yue2Pipeline *             p,
+                               const char *               model_path,
+                               const char *               vae_path,
+                               const Yue2PipelineParams & params) {
+    p->model_path = model_path;
+    p->vae_path   = vae_path;
+    p->params     = params;
     debug_init(&p->dumper, params.dump_dir);
-    if (!p->lm.use_flash_attn) {
+    if (params.no_fa) {
         fprintf(stderr, "[Pipeline] Flash attention disabled\n");
     }
-    if (p->lm.clamp_fp16) {
+    if (params.clamp_fp16) {
         fprintf(stderr, "[Pipeline] FP16 clamp enabled\n");
     }
-    p->nar = {};
-    if (!nar_load(&p->nar, &p->lm, model_path)) {
-        qw3lm_free(&p->lm);
+    if (!store_bpe(p->store, model_path)) {
         return false;
     }
-    p->vae = {};
-    vae_ggml_load(&p->vae, vae_path);
-    p->loaded = true;
+
+    Qwen3LMConfig cfg;
+    if (!qw3lm_read_config(model_path, &cfg)) {
+        return false;
+    }
+    if (params.max_seq > 0) {
+        cfg.max_seq_len = params.max_seq;
+    }
+    p->kv_backend = backend_init("KV");
+    if (!qw3lm_kv_alloc(&p->kv, cfg, p->kv_backend.backend, 1)) {
+        return false;
+    }
+    p->configured = true;
     return true;
 }
 
 static void pipeline_free(Yue2Pipeline * p) {
-    if (!p->loaded) {
+    if (!p->configured) {
         return;
     }
-    vae_ggml_free(&p->vae);
-    nar_free(&p->nar);
-    qw3lm_free(&p->lm);
-    p->loaded = false;
+    qw3lm_kv_free(&p->kv);
+    backend_release(p->kv_backend.backend, p->kv_backend.cpu_backend);
+    p->configured = false;
+}
+
+// Require helpers: one place builds the store key of each module from the
+// configured paths, and applies the runtime knobs after every require
+// (idempotent on cache hits). The NAR bakes them into its graph at build
+// time, the LM reads them at every forward.
+static Qwen3LM * require_lm(Yue2Pipeline * p) {
+    ModelKey  k = { MODEL_LM, p->model_path };
+    Qwen3LM * m = store_require_lm(p->store, k);
+    if (m) {
+        m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
+        m->clamp_fp16     = p->params.clamp_fp16;
+    }
+    return m;
+}
+
+static Yue2NAR * require_nar(Yue2Pipeline * p) {
+    ModelKey  k = { MODEL_NAR, p->model_path };
+    Yue2NAR * m = store_require_nar(p->store, k);
+    if (m) {
+        m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
+        m->clamp_fp16     = p->params.clamp_fp16;
+    }
+    return m;
+}
+
+static VAEGGML * require_vae(Yue2Pipeline * p) {
+    ModelKey k = { MODEL_VAE, p->vae_path };
+    return store_require_vae(p->store, k);
 }
 
 static bool pipeline_cot(const std::string & name, Yue2Cot * cot) {
@@ -171,7 +209,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         return false;
     }
 
-    BPETokenizer * tok    = &p->tok;
+    BPETokenizer * tok    = store_bpe(p->store, p->model_path.c_str());
     auto           encode = [tok](const std::string & text) {
         return bpe_encode(tok, text);
     };
@@ -189,13 +227,26 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     std::vector<std::string>      scores(B);
     std::vector<bool>             truncated(B, false);
     bool                          has_score = cot != YUE2_COT_OFF;
+    bool                          planned   = has_score && r.abc.empty();
+
+    // The AR half holds the GPU for the plan and the semantic stage, then
+    // steps aside for the synthesis
+    std::optional<ModelHandle> lm_hold;
+    Qwen3LM *                  lm = nullptr;
+    if (planned || !replay) {
+        lm = require_lm(p);
+        if (!lm) {
+            return false;
+        }
+        lm_hold.emplace(p->store, lm);
+    }
     if (has_score && !r.abc.empty()) {
         abc_ids.assign(B, encode(r.abc));
         scores.assign(B, r.abc);
     } else if (has_score) {
         std::vector<int>            open = yue2_build_prompt_ids(encode, cot, r.style, r.lyrics, nullptr);
         std::vector<Yue2Generation> plans;
-        if (!yue2_generate(&p->lm, std::vector<std::vector<int>>(B, open), {}, 1.0f, r.abc_sampling, r.lm_seed,
+        if (!yue2_generate(lm, &p->kv, std::vector<std::vector<int>>(B, open), {}, 1.0f, r.abc_sampling, r.lm_seed,
                            YUE2_PHASE_ABC, &plans, cancelled, cancel_data)) {
             return false;
         }
@@ -245,11 +296,12 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                 semantic.min_tokens = semantic.max_tokens;
             }
         }
-        if (!yue2_generate(&p->lm, prefixes, negatives, guidance, semantic, r.lm_seed, YUE2_PHASE_SEMANTIC, &codes,
+        if (!yue2_generate(lm, &p->kv, prefixes, negatives, guidance, semantic, r.lm_seed, YUE2_PHASE_SEMANTIC, &codes,
                            cancelled, cancel_data)) {
             return false;
         }
     }
+    lm_hold.reset();
 
     songs->assign((size_t) B * M, {});
     for (int i = 0; i < B; i++) {
@@ -278,13 +330,18 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     // and their latent block twice over, once as tokens and once as frames
     // The chunk prefill logits go nowhere, the semantic window keeps the
     // graph key of the stage
-    const int context = p->lm.cfg.max_seq_len;
+    const int context = p->kv.cfg.max_seq_len;
     int       row0, rows;
     yue2_phase_rows(YUE2_PHASE_SEMANTIC, &row0, &rows);
     std::vector<float> probe((size_t) rows);
     std::vector<float> block;
     DebugDumper        quiet;
     debug_init(&quiet, nullptr);
+
+    // The NAR stays resident across songs and chunks, and steps aside for
+    // the prefill of a chunk
+    std::optional<ModelHandle> nar_hold;
+    Yue2NAR *                  nar = nullptr;
     for (int i = 0; i < B; i++) {
         const int prefix_len = (int) prefixes[i].size();
         const int chunk_size = (context - prefix_len - 3) / 2;
@@ -309,8 +366,22 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             sequence.insert(sequence.end(), codes[i].tokens.begin() + start, codes[i].tokens.begin() + start + frames);
             sequence.push_back(YUE2_MUSIC_END);
             if (replay || frames != T_lat) {
-                qw3lm_reset_kv(&p->lm, i);
-                qw3lm_forward(&p->lm, sequence.data(), (int) sequence.size(), i, probe.data(), row0, rows);
+                nar_hold.reset();
+                nar                = nullptr;
+                Qwen3LM * lm_chunk = require_lm(p);
+                if (!lm_chunk) {
+                    return false;
+                }
+                ModelHandle lm_chunk_hold(p->store, lm_chunk);
+                qw3lm_kv_reset(&p->kv, i);
+                qw3lm_forward(lm_chunk, &p->kv, sequence.data(), (int) sequence.size(), i, probe.data(), row0, rows);
+            }
+            if (!nar) {
+                nar = require_nar(p);
+                if (!nar) {
+                    return false;
+                }
+                nar_hold.emplace(p->store, nar);
             }
 
             // The first chunk of the first song feeds the cossim harness: the
@@ -329,7 +400,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                        (*songs)[(size_t) i * M + j].latents.data() + (size_t) start * YUE2_LATENT_DIM,
                        span * sizeof(float));
             }
-            if (!nar_solve(&p->nar, block.data(), frames, M, ar_len, i, r.steps, dbg, cancelled, cancel_data)) {
+            if (!nar_solve(nar, &p->kv, block.data(), frames, M, ar_len, i, r.steps, dbg, cancelled, cancel_data)) {
                 return false;
             }
             for (int j = 0; j < M; j++) {
@@ -341,12 +412,18 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         }
     }
 
+    nar_hold.reset();
+    VAEGGML * vae = require_vae(p);
+    if (!vae) {
+        return false;
+    }
+    ModelHandle vae_hold(p->store, vae);
     for (size_t t = 0; t < songs->size(); t++) {
         Yue2Song & song        = (*songs)[t];
         int        max_T_audio = song.T_lat * YUE2_HOP;
         fprintf(stderr, "[VAE] Track %zu/%zu: song %zu variation %zu\n", t + 1, songs->size(), t / M, t % M);
         song.audio.assign((size_t) 2 * max_T_audio, 0.0f);
-        song.T_audio = vae_ggml_decode_tiled(&p->vae, song.latents.data(), song.T_lat, song.audio.data(), max_T_audio,
+        song.T_audio = vae_ggml_decode_tiled(vae, song.latents.data(), song.T_lat, song.audio.data(), max_T_audio,
                                              p->params.vae_core, p->params.vae_halo, cancelled, cancel_data);
         if (song.T_audio < 0) {
             return false;

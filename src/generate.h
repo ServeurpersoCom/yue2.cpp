@@ -28,6 +28,7 @@ struct Yue2Generation {
 // Prefill set s with a prefix, or copy the set of an equal prefix already
 // prefilled below it. The logits are the LM head rows [row0, row0 + rows).
 static void yue2_prefill(Qwen3LM *                             lm,
+                         Qw3lmKvCache *                        kv,
                          const std::vector<std::vector<int>> & prefixes,
                          int                                   first_set,
                          int                                   i,
@@ -39,15 +40,15 @@ static void yue2_prefill(Qwen3LM *                             lm,
     Timer timer;
     for (int j = 0; j < i; j++) {
         if (prefixes[j] == prefixes[i]) {
-            qw3lm_copy_kv(lm, first_set + j, s);
+            qw3lm_kv_copy(kv, first_set + j, s);
             memcpy(logits + (size_t) s * rows, logits + (size_t) (first_set + j) * rows, (size_t) rows * sizeof(float));
             fprintf(stderr, "[AR] %s song %d: %zu tokens copied from song %d, %.0f ms\n", label, i, prefixes[i].size(),
                     j, timer.ms());
             return;
         }
     }
-    qw3lm_reset_kv(lm, s);
-    qw3lm_forward(lm, prefixes[i].data(), (int) prefixes[i].size(), s, logits + (size_t) s * rows, row0, rows);
+    qw3lm_kv_reset(kv, s);
+    qw3lm_forward(lm, kv, prefixes[i].data(), (int) prefixes[i].size(), s, logits + (size_t) s * rows, row0, rows);
     fprintf(stderr, "[AR] %s song %d: %zu tokens prefilled, %.0f ms\n", label, i, prefixes[i].size(), timer.ms());
 }
 
@@ -56,6 +57,7 @@ static void yue2_prefill(Qwen3LM *                             lm,
 // KV sets B..2B-1 and decodes both branches in the same batched forward, the
 // conditional and unconditional logits combining before the distribution.
 static bool yue2_generate(Qwen3LM *                             lm,
+                          Qw3lmKvCache *                        kv,
                           const std::vector<std::vector<int>> & prefixes,
                           const std::vector<std::vector<int>> & negatives,
                           float                                 cfg_scale,
@@ -66,7 +68,7 @@ static bool yue2_generate(Qwen3LM *                             lm,
                           bool (*cancelled)(void *) = nullptr,
                           void * cancel_data        = nullptr) {
     const int B       = (int) prefixes.size();
-    const int context = lm->cfg.max_seq_len;
+    const int context = kv->cfg.max_seq_len;
     bool      guided  = cfg_scale != 1.0f;
     if (guided && (int) negatives.size() != B) {
         fprintf(stderr, "[AR] FATAL: guidance %.3f needs an unconditional prefix per sequence\n", (double) cfg_scale);
@@ -83,7 +85,9 @@ static bool yue2_generate(Qwen3LM *                             lm,
     }
 
     const int N = guided ? 2 * B : B;
-    qw3lm_kv_sets(lm, N);
+    if (!qw3lm_kv_sets(kv, N)) {
+        return false;
+    }
 
     // The LM head only computes the rows the phase samples from
     int row0, rows;
@@ -102,11 +106,11 @@ static bool yue2_generate(Qwen3LM *                             lm,
 
     Timer prefill_timer;
     for (int i = 0; i < B; i++) {
-        yue2_prefill(lm, prefixes, 0, i, batched.data(), row0, rows, label);
+        yue2_prefill(lm, kv, prefixes, 0, i, batched.data(), row0, rows, label);
     }
     if (guided) {
         for (int i = 0; i < B; i++) {
-            yue2_prefill(lm, negatives, B, i, batched.data(), row0, rows, "Unconditional");
+            yue2_prefill(lm, kv, negatives, B, i, batched.data(), row0, rows, "Unconditional");
         }
     }
     fprintf(stderr, "[AR] %s prefill: %.0f ms, CFG=%.2f, top_k=%d, budget=%d, songs=%d, batch=%d\n", label,
@@ -167,7 +171,7 @@ static bool yue2_generate(Qwen3LM *                             lm,
         if ((step % 100) == 0) {
             fprintf(stderr, "[AR] %s %d/%d\n", label, step, s.max_tokens);
         }
-        qw3lm_forward_batch(lm, tokens.data(), kv_sets.data(), N, batched.data(), row0, rows);
+        qw3lm_forward_batch(lm, kv, tokens.data(), kv_sets.data(), N, batched.data(), row0, rows);
         for (int i = 0; i < B; i++) {
             if (owed[i] > 0) {
                 owed[i]--;

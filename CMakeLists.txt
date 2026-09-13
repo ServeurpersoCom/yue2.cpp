@@ -115,7 +115,7 @@ target_link_libraries(yue-plan PRIVATE yyjson)
 link_ggml_backends(yue-plan)
 
 # yue-synth: full pipeline (score -> semantic -> flow matching -> VAE -> audio)
-add_executable(yue-synth tools/yue-synth.cpp src/request.cpp)
+add_executable(yue-synth tools/yue-synth.cpp src/request.cpp src/model-store.cpp)
 target_link_libraries(yue-synth PRIVATE yyjson)
 link_ggml_backends(yue-synth)
 
@@ -133,7 +133,7 @@ add_custom_command(
 set_source_files_properties(${WEBUI_OUTPUT} PROPERTIES GENERATED TRUE)
 
 # yue-server: HTTP server (single slot job queue + embedded webui)
-add_executable(yue-server tools/yue-server.cpp src/request.cpp ${WEBUI_OUTPUT})
+add_executable(yue-server tools/yue-server.cpp src/request.cpp src/model-store.cpp ${WEBUI_OUTPUT})
 target_include_directories(yue-server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(yue-server PRIVATE yyjson httplib)
 link_ggml_backends(yue-server)

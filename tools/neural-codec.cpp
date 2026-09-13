@@ -268,7 +268,7 @@ static void print_usage(const char * prog) {
             "  --bitrate <kbps>        MP3 bitrate (default: 128)\n"
             "\n"
             "Debug:\n"
-            "  --vae-core <N>          Tile core frames (default: 1024)\n"
+            "  --vae-core <N>          Tile core frames (default: 512)\n"
             "  --vae-halo <N>          Tile halo frames (default: 16)\n",
             prog, prog);
 }
@@ -298,7 +298,7 @@ int main(int argc, char ** argv) {
     int          mode        = -1;  // 0 encode, 1 decode
     int          quant       = 0;   // 0 f32, 8 q8, 4 q4
     int          bitrate     = 128;
-    int          core        = 1024;
+    int          core        = 512;
     int          halo        = 16;
 
     for (int i = 1; i < argc; i++) {
