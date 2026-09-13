@@ -90,7 +90,7 @@ int main(int argc, char ** argv) {
             print_usage(argv[0]);
             return 0;
         } else {
-            fprintf(stderr, "[Plan] FATAL: unknown argument %s\n", argv[i]);
+            fprintf(stderr, "[Plan] ERROR: unknown argument %s\n", argv[i]);
             return 1;
         }
     }

@@ -168,12 +168,12 @@ bool request_parse_json(Yue2Request * r, const char * json) {
     request_init(r);
     yyjson_doc * doc = yyjson_read(json, strlen(json), 0);
     if (!doc) {
-        fprintf(stderr, "[Request] FATAL: invalid JSON\n");
+        fprintf(stderr, "[Request] ERROR: malformed JSON\n");
         return false;
     }
     yyjson_val * root = yyjson_doc_get_root(doc);
     if (!yyjson_is_obj(root)) {
-        fprintf(stderr, "[Request] FATAL: root is not an object\n");
+        fprintf(stderr, "[Request] ERROR: root is not an object\n");
         yyjson_doc_free(doc);
         return false;
     }
@@ -186,17 +186,18 @@ bool request_parse(Yue2Request * r, const char * path) {
     request_init(r);
     yyjson_doc * doc = yyjson_read_file(path, 0, NULL, NULL);
     if (!doc) {
-        fprintf(stderr, "[Request] FATAL: cannot read %s\n", path);
+        fprintf(stderr, "[Request] ERROR: cannot read %s\n", path);
         return false;
     }
     yyjson_val * root = yyjson_doc_get_root(doc);
     if (!yyjson_is_obj(root)) {
-        fprintf(stderr, "[Request] FATAL: root is not an object in %s\n", path);
+        fprintf(stderr, "[Request] ERROR: root is not an object in %s\n", path);
         yyjson_doc_free(doc);
         return false;
     }
     request_parse_obj(root, r);
     yyjson_doc_free(doc);
+    fprintf(stderr, "[Request] Parsed %s\n", path);
     return true;
 }
 

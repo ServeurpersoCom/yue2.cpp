@@ -517,6 +517,7 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
 
 static void run_job(std::shared_ptr<Job> job, Yue2Request request) {
     active_job_set(job);
+    fprintf(stderr, "[Server] Job %s: %s\n", job->id.c_str(), request_to_json(&request).c_str());
 
     std::vector<Yue2Song> songs;
     bool ok = pipeline_generate(&g_pipeline, request, &songs, server_cancel_job, (void *) &job->cancel);
@@ -627,7 +628,7 @@ int main(int argc, char ** argv) {
             print_usage(argv[0]);
             return 0;
         } else {
-            fprintf(stderr, "[Server] FATAL: unknown argument %s\n", argv[i]);
+            fprintf(stderr, "[Server] ERROR: unknown argument %s\n", argv[i]);
             return 1;
         }
     }
@@ -702,6 +703,7 @@ int main(int argc, char ** argv) {
         }
         if (req.has_param("cancel")) {
             job->cancel.store(true);
+            fprintf(stderr, "[Server] Cancel requested for job %s\n", job->id.c_str());
         }
         res.set_content(json_string("status", job_status_str(job->status.load())), "application/json");
     });
@@ -716,8 +718,11 @@ int main(int argc, char ** argv) {
         res.set_content(std::string((const char *) index_html_gz, index_html_gz_len), "text/html");
     });
 
-    fprintf(stderr, "[Server] yue-server %s listening on %s:%d\n", YUE2_VERSION, host, port);
-    svr.listen(host, port);
+    fprintf(stderr, "[Server] yue-server %s\n", YUE2_VERSION);
+    fprintf(stderr, "[Server] Listening on %s:%d\n", host, port);
+    if (!svr.listen(host, port)) {
+        fprintf(stderr, "[Server] FATAL: cannot bind %s:%d\n", host, port);
+    }
 
     {
         std::lock_guard<std::mutex> lock(mtx_work);
@@ -727,5 +732,6 @@ int main(int argc, char ** argv) {
     worker.join();
     pipeline_free(&g_pipeline);
     store_free(g_pipeline.store);
+    fprintf(stderr, "[Server] Done\n");
     return 0;
 }
