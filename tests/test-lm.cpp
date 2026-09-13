@@ -54,9 +54,9 @@ int main(int argc, char ** argv) {
     std::vector<int>   last(N), sets(N);
 
     // Prefill all ids but the last of every sequence, then decode the last
-    // ids in one batch
+    // ids in one batch, the whole vocabulary as the head window
     for (int s = 0; s < N; s++) {
-        qw3lm_forward(&lm, seqs[s].data(), (int) seqs[s].size() - 1, s, logits.data() + (size_t) s * V);
+        qw3lm_forward(&lm, seqs[s].data(), (int) seqs[s].size() - 1, s, logits.data() + (size_t) s * V, 0, V);
         std::vector<float> one(logits.begin() + (size_t) s * V, logits.begin() + (size_t) (s + 1) * V);
         if (!dump(prefix + "_prefill_" + std::to_string(s) + "_logits.bin", one)) {
             return 1;
@@ -65,7 +65,7 @@ int main(int argc, char ** argv) {
         sets[s] = s;
     }
 
-    qw3lm_forward_batch(&lm, last.data(), sets.data(), N, logits.data());
+    qw3lm_forward_batch(&lm, last.data(), sets.data(), N, logits.data(), 0, V);
     for (int s = 0; s < N; s++) {
         std::vector<float> one(logits.begin() + (size_t) s * V, logits.begin() + (size_t) (s + 1) * V);
         if (!dump(prefix + "_decode_" + std::to_string(s) + "_logits.bin", one)) {

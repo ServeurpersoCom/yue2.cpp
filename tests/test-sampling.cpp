@@ -71,7 +71,10 @@ int main(int argc, char ** argv) {
     const Yue2Sampling &       s     = semantic ? YUE2_SEMANTIC_SAMPLING : YUE2_ABC_SAMPLING;
     Yue2Phase                  phase = semantic ? YUE2_PHASE_SEMANTIC : YUE2_PHASE_ABC;
     std::vector<Yue2Candidate> candidates;
-    yue2_distribution(logits.data(), s, history, step, phase, candidates);
+    // The harness reads whole vocabulary logits, the distribution its phase window
+    int                        row0, rows;
+    yue2_phase_rows(phase, &row0, &rows);
+    yue2_distribution(logits.data() + row0, s, history, step, phase, candidates);
 
     std::vector<float> probs;
     yue2_probabilities(candidates, vocab_size, probs);

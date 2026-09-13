@@ -276,8 +276,12 @@ static bool pipeline_generate(Yue2Pipeline *          p,
 
     // Acoustic chunks: the context holds the prefix, the codes of the chunk
     // and their latent block twice over, once as tokens and once as frames
-    const int          context = p->lm.cfg.max_seq_len;
-    std::vector<float> probe((size_t) p->lm.cfg.vocab_size);
+    // The chunk prefill logits go nowhere, the semantic window keeps the
+    // graph key of the stage
+    const int context = p->lm.cfg.max_seq_len;
+    int       row0, rows;
+    yue2_phase_rows(YUE2_PHASE_SEMANTIC, &row0, &rows);
+    std::vector<float> probe((size_t) rows);
     std::vector<float> block;
     DebugDumper        quiet;
     debug_init(&quiet, nullptr);
@@ -306,7 +310,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             sequence.push_back(YUE2_MUSIC_END);
             if (replay || frames != T_lat) {
                 qw3lm_reset_kv(&p->lm, i);
-                qw3lm_forward(&p->lm, sequence.data(), (int) sequence.size(), i, probe.data());
+                qw3lm_forward(&p->lm, sequence.data(), (int) sequence.size(), i, probe.data(), row0, rows);
             }
 
             // The first chunk of the first song feeds the cossim harness: the

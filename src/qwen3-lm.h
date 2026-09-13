@@ -43,6 +43,8 @@ struct Qw3lmGraphCache {
     bool                  built        = false;
     int                   key_n_kv_pad = 0;
     int                   key_N        = 0;
+    int                   key_row0     = 0;
+    int                   key_rows     = 0;
     int                   key_s0       = 0;
     struct ggml_cgraph *  gf           = nullptr;
     struct ggml_tensor *  token_ids_t  = nullptr;
@@ -445,10 +447,20 @@ static struct ggml_tensor * qw3lm_build_attn(struct ggml_context * ctx,
     return qwen3_linear(ctx, ly->o_proj, attn);
 }
 
-// Prefill forward: token_ids[n_tokens] -> logits[vocab_size] of the last token.
+// Rows [row0, row0 + rows) of the LM head, the vocabulary window a stage
+// samples from: the head is the largest matmul of a decode step and the
+// logits it drops are never read
+static struct ggml_tensor * qw3lm_head_rows(struct ggml_context * ctx, const Qwen3LM * m, int row0, int rows) {
+    return ggml_view_2d(ctx, m->lm_head, m->cfg.hidden_size, rows, m->lm_head->nb[1],
+                        (size_t) row0 * m->lm_head->nb[1]);
+}
+
+// Prefill forward: token_ids[n_tokens] -> logits[rows] of the last token, the
+// LM head rows [row0, row0 + rows).
 // kv_set: which KV cache set to use (0=conditional, 1=unconditional for CFG).
 // Rebuilds and reallocates its graph, which invalidates the static decode graph.
-static void qw3lm_forward(Qwen3LM * m, const int * token_ids, int n_tokens, int kv_set, float * logits) {
+static void
+qw3lm_forward(Qwen3LM * m, const int * token_ids, int n_tokens, int kv_set, float * logits, int row0, int rows) {
     if (m->batch_graph.graph.sched_allocated) {
         static_graph_release(&m->batch_graph.graph, m->sched);
         m->batch_graph.built = false;
@@ -530,8 +542,8 @@ static void qw3lm_forward(Qwen3LM * m, const int * token_ids, int n_tokens, int 
         hidden = ggml_view_1d(ctx, hidden, H, (int64_t) (n_tokens - 1) * H * sizeof(float));
     }
 
-    // LM head: logits = lm_head^T @ hidden -> [V, 1]
-    struct ggml_tensor * lgt = ggml_mul_mat(ctx, m->lm_head, ggml_cont(ctx, hidden));
+    // LM head window: logits = rows^T @ hidden -> [rows, 1]
+    struct ggml_tensor * lgt = ggml_mul_mat(ctx, qw3lm_head_rows(ctx, m, row0, rows), ggml_cont(ctx, hidden));
     ggml_set_name(lgt, "logits");
     ggml_set_output(lgt);
     ggml_build_forward_expand(gf, lgt);
@@ -578,8 +590,8 @@ static void qw3lm_forward(Qwen3LM * m, const int * token_ids, int n_tokens, int 
     // Compute
     ggml_backend_sched_graph_compute(m->sched, gf);
 
-    // Read logits [V]
-    ggml_backend_tensor_get(lgt, logits, 0, c.vocab_size * sizeof(float));
+    // Read logits [rows]
+    ggml_backend_tensor_get(lgt, logits, 0, (size_t) rows * sizeof(float));
 
     // Advance KV position. The arena and the sched allocation persist
     // into the next forward.
@@ -591,8 +603,15 @@ static void qw3lm_forward(Qwen3LM * m, const int * token_ids, int n_tokens, int 
 // across the token loop.
 // kv_pos per element from m->kv_pos[kv_sets[i]], supports different prompt lengths.
 // kv_sets[N]: which KV set each token uses, always consecutive from kv_sets[0].
-// logits: [N * vocab_size] output, N logit vectors concatenated.
-static void qw3lm_forward_batch(Qwen3LM * m, const int * token_ids, const int * kv_sets, int N, float * logits) {
+// logits: [N * rows] output, N logit vectors of the LM head rows
+// [row0, row0 + rows) concatenated.
+static void qw3lm_forward_batch(Qwen3LM *   m,
+                                const int * token_ids,
+                                const int * kv_sets,
+                                int         N,
+                                float *     logits,
+                                int         row0,
+                                int         rows) {
     const Qwen3LMConfig & c   = m->cfg;
     int                   D   = c.head_dim;
     int                   Nh  = c.n_heads;
@@ -627,7 +646,8 @@ static void qw3lm_forward_batch(Qwen3LM * m, const int * token_ids, const int * 
 
     const int  s0         = kv_sets[0];
     const bool need_build = !m->batch_graph.built || m->batch_graph.key_n_kv_pad != n_kv_pad ||
-                            m->batch_graph.key_N != N || m->batch_graph.key_s0 != s0;
+                            m->batch_graph.key_N != N || m->batch_graph.key_s0 != s0 ||
+                            m->batch_graph.key_row0 != row0 || m->batch_graph.key_rows != rows;
     if (need_build) {
         static_graph_release(&m->batch_graph.graph, m->sched);
         m->batch_graph.built      = false;
@@ -772,7 +792,7 @@ static void qw3lm_forward_batch(Qwen3LM * m, const int * token_ids, const int * 
 
         // Final norm + LM head
         hidden = qwen3_rms_norm(ctx, hidden, m->final_norm, c.rms_norm_eps);
-        lgt    = ggml_mul_mat(ctx, m->lm_head, hidden);  // [V, N]
+        lgt    = ggml_mul_mat(ctx, qw3lm_head_rows(ctx, m, row0, rows), hidden);  // [rows, N]
         ggml_set_name(lgt, "logits");
         ggml_set_output(lgt);
         ggml_build_forward_expand(gf, lgt);
@@ -791,6 +811,8 @@ static void qw3lm_forward_batch(Qwen3LM * m, const int * token_ids, const int * 
         m->batch_graph.key_n_kv_pad = n_kv_pad;
         m->batch_graph.key_N        = N;
         m->batch_graph.key_s0       = s0;
+        m->batch_graph.key_row0     = row0;
+        m->batch_graph.key_rows     = rows;
         m->batch_graph.pos_data.resize((size_t) N);
         m->batch_graph.rows_data.resize((size_t) N);
         m->batch_graph.mask_data.resize((size_t) n_kv_pad * (size_t) N);
@@ -828,8 +850,8 @@ static void qw3lm_forward_batch(Qwen3LM * m, const int * token_ids, const int * 
                             m->batch_graph.mask_data.size() * sizeof(uint16_t));
     static_graph_compute(&m->batch_graph.graph, m->backend, m->sched, gf);
 
-    // Read logits [V, N]
-    ggml_backend_tensor_get(lgt, logits, 0, (size_t) c.vocab_size * N * sizeof(float));
+    // Read logits [rows, N]
+    ggml_backend_tensor_get(lgt, logits, 0, (size_t) rows * N * sizeof(float));
 
     // Advance all KV positions. The arena and the sched allocation
     // persist into the next forward.

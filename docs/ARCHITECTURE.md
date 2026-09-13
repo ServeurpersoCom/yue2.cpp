@@ -167,7 +167,12 @@ and 32768 semantic codes).
 `src/qwen3-lm.h` builds the autoregressive half: a prefill of one
 sequence into one KV set, and a batched decode of N sequences over N
 consecutive sets, which is the one decode path (N=1 for a single unguided
-song, 2N under guidance, one set per song of a batch). `src/nar.h` builds
+song, 2N under guidance, one set per song of a batch). Both compute the
+LM head on the rows a stage samples from, its content range and its end
+token, which sit next to each other in the vocabulary: 151849 rows for
+the score stage, 32769 for the semantic one instead of 184704, the
+largest matmul of a decode step and its transfer cut by 5.6x on the
+semantic stage, the logits unchanged since each is its own dot product. `src/nar.h` builds
 the other half plus the flow matching heads, and solves the M noise
 variations of a song in one graph over the set the AR left complete.
 

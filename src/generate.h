@@ -26,27 +26,28 @@ struct Yue2Generation {
 };
 
 // Prefill set s with a prefix, or copy the set of an equal prefix already
-// prefilled below it
+// prefilled below it. The logits are the LM head rows [row0, row0 + rows).
 static void yue2_prefill(Qwen3LM *                             lm,
                          const std::vector<std::vector<int>> & prefixes,
                          int                                   first_set,
                          int                                   i,
                          float *                               logits,
-                         int                                   V,
+                         int                                   row0,
+                         int                                   rows,
                          const char *                          label) {
     int   s = first_set + i;
     Timer timer;
     for (int j = 0; j < i; j++) {
         if (prefixes[j] == prefixes[i]) {
             qw3lm_copy_kv(lm, first_set + j, s);
-            memcpy(logits + (size_t) s * V, logits + (size_t) (first_set + j) * V, (size_t) V * sizeof(float));
+            memcpy(logits + (size_t) s * rows, logits + (size_t) (first_set + j) * rows, (size_t) rows * sizeof(float));
             fprintf(stderr, "[AR] %s song %d: %zu tokens copied from song %d, %.0f ms\n", label, i, prefixes[i].size(),
                     j, timer.ms());
             return;
         }
     }
     qw3lm_reset_kv(lm, s);
-    qw3lm_forward(lm, prefixes[i].data(), (int) prefixes[i].size(), s, logits + (size_t) s * V);
+    qw3lm_forward(lm, prefixes[i].data(), (int) prefixes[i].size(), s, logits + (size_t) s * rows, row0, rows);
     fprintf(stderr, "[AR] %s song %d: %zu tokens prefilled, %.0f ms\n", label, i, prefixes[i].size(), timer.ms());
 }
 
@@ -84,14 +85,16 @@ static bool yue2_generate(Qwen3LM *                             lm,
     const int N = guided ? 2 * B : B;
     qw3lm_kv_sets(lm, N);
 
-    int          V     = lm->cfg.vocab_size;
+    // The LM head only computes the rows the phase samples from
+    int row0, rows;
+    yue2_phase_rows(phase, &row0, &rows);
     int          end   = phase == YUE2_PHASE_ABC ? YUE2_ABC_END : YUE2_MUSIC_END;
     const char * label = phase == YUE2_PHASE_ABC ? "Score" : "Semantic";
     Timer        timer;
 
     // Logits in KV set order, [cond 0..B-1, uncond B..2B-1], the prefills and
     // the decode steps writing the same rows
-    std::vector<float> batched((size_t) N * V);
+    std::vector<float> batched((size_t) N * rows);
     std::vector<int>   kv_sets(N);
     for (int i = 0; i < N; i++) {
         kv_sets[i] = i;
@@ -99,11 +102,11 @@ static bool yue2_generate(Qwen3LM *                             lm,
 
     Timer prefill_timer;
     for (int i = 0; i < B; i++) {
-        yue2_prefill(lm, prefixes, 0, i, batched.data(), V, label);
+        yue2_prefill(lm, prefixes, 0, i, batched.data(), row0, rows, label);
     }
     if (guided) {
         for (int i = 0; i < B; i++) {
-            yue2_prefill(lm, negatives, B, i, batched.data(), V, "Unconditional");
+            yue2_prefill(lm, negatives, B, i, batched.data(), row0, rows, "Unconditional");
         }
     }
     fprintf(stderr, "[AR] %s prefill: %.0f ms, CFG=%.2f, top_k=%d, budget=%d, songs=%d, batch=%d\n", label,
@@ -116,7 +119,7 @@ static bool yue2_generate(Qwen3LM *                             lm,
     // it draws, zero once sealed.
     std::vector<int>           owed(B, -1);
     std::vector<int>           tokens(N);
-    std::vector<float>         mixed(guided ? (size_t) V : 0);
+    std::vector<float>         mixed(guided ? (size_t) rows : 0);
     std::vector<Yue2Candidate> candidates;
     int                        step = 0;
     for (;; step++) {
@@ -128,11 +131,11 @@ static bool yue2_generate(Qwen3LM *                             lm,
         for (int i = 0; i < B; i++) {
             Yue2Generation & g = (*out)[i];
             if (owed[i] < 0) {
-                const float * cond   = batched.data() + (size_t) i * V;
+                const float * cond   = batched.data() + (size_t) i * rows;
                 const float * logits = cond;
                 if (guided) {
-                    const float * uncond = batched.data() + (size_t) (B + i) * V;
-                    for (int k = 0; k < V; k++) {
+                    const float * uncond = batched.data() + (size_t) (B + i) * rows;
+                    for (int k = 0; k < rows; k++) {
                         mixed[k] = uncond[k] + cfg_scale * (cond[k] - uncond[k]);
                     }
                     logits = mixed.data();
@@ -164,7 +167,7 @@ static bool yue2_generate(Qwen3LM *                             lm,
         if ((step % 100) == 0) {
             fprintf(stderr, "[AR] %s %d/%d\n", label, step, s.max_tokens);
         }
-        qw3lm_forward_batch(lm, tokens.data(), kv_sets.data(), N, batched.data());
+        qw3lm_forward_batch(lm, tokens.data(), kv_sets.data(), N, batched.data(), row0, rows);
         for (int i = 0; i < B; i++) {
             if (owed[i] > 0) {
                 owed[i]--;

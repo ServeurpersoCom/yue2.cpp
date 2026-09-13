@@ -51,7 +51,7 @@ struct Yue2Candidate {
     float score;
 };
 
-// Allowed id range of a stage, end token excluded
+// Content range [lo, hi) and end token of a phase
 static void yue2_phase_range(Yue2Phase phase, int * lo, int * hi, int * end) {
     if (phase == YUE2_PHASE_ABC) {
         *lo  = 0;
@@ -64,8 +64,19 @@ static void yue2_phase_range(Yue2Phase phase, int * lo, int * hi, int * end) {
     *end = YUE2_MUSIC_END;
 }
 
+// LM head rows [row0, row0 + rows) a phase samples from: its content range
+// and its end token, which sit next to each other in the vocabulary. Logits
+// of a phase are indexed from row0.
+static void yue2_phase_rows(Yue2Phase phase, int * row0, int * rows) {
+    int lo, hi, end;
+    yue2_phase_range(phase, &lo, &hi, &end);
+    *row0 = end < lo ? end : lo;
+    *rows = (end >= hi ? end + 1 : hi) - *row0;
+}
+
 // Candidates that survive the phase mask, the end token floor, top-k and the
-// nucleus, in descending score order. Temperature zero returns the argmax alone.
+// nucleus, in descending score order. Temperature zero returns the argmax
+// alone. logits holds the LM head rows of the phase, indexed from row0.
 static void yue2_distribution(const float *                logits,
                               const Yue2Sampling &         s,
                               const std::vector<int> &     history,
@@ -74,15 +85,16 @@ static void yue2_distribution(const float *                logits,
                               std::vector<Yue2Candidate> & out) {
     int lo, hi, end;
     yue2_phase_range(phase, &lo, &hi, &end);
+    int row0 = end < lo ? end : lo;  // first row of the head window of the phase
 
     // The candidate of id sits at index id - lo until the truncations below
     out.clear();
     out.reserve((size_t) (hi - lo) + 1);
     for (int id = lo; id < hi; id++) {
-        out.push_back({ id, logits[id] });
+        out.push_back({ id, logits[id - row0] });
     }
     if (step >= s.min_tokens) {
-        out.push_back({ end, logits[end] });
+        out.push_back({ end, logits[end - row0] });
     }
 
     // The ids of the penalty window scale by their frequency in it, negatives

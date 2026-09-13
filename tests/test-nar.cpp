@@ -94,7 +94,7 @@ int main(int argc, char ** argv) {
 
     // Fill KV set 0 with the AR prefix, which is the NAR prefix cache
     std::vector<float> logits(lm.cfg.vocab_size);
-    qw3lm_forward(&lm, ids.data(), ar_len, 0, logits.data());
+    qw3lm_forward(&lm, ids.data(), ar_len, 0, logits.data(), 0, lm.cfg.vocab_size);
 
     std::vector<float> result(x_t.size());
     bool               ok;
