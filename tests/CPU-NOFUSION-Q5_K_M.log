@@ -1,0 +1,228 @@
+[BPE] Loaded from GGUF: 151851 vocab, 151387 merges
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-Q5_K_M.gguf: 627 tensors, data at offset 5367296
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K fused, V separate
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 1542.4 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[Pipeline] Flash attention disabled
+[GGUF] ../models/YuE2-3B-Q5_K_M.gguf: 627 tensors, data at offset 5367296
+[Load] NAR backend: CPU (shared)
+[NAR] Attn: all separate
+[NAR] MLP: gate+up fused
+[WeightCtx] Loaded 316 tensors, 953.9 MB into backend
+[NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
+[GGUF] ../models/YuE2-Vae-F32.gguf: 435 tensors, data at offset 32800
+[Load] VAE backend: CPU (shared)
+[VAE] Backend: CPU, Weight buffer: 126.7 MB
+[VAE] Loaded: 6 blocks, upsample=1920x, F32 activations
+[Prompt] cot=off, songs=1, variations=1, 1 tracks
+[Pipeline] Replay: 200 frames supplied
+[NAR] Song 0: 200 frames (8.0 s), prefix 54, 1 chunk of 12259, 1 variation
+[Debug] ar_ids: [255] first4: 151643.000000 31115.000000 4627.000000 448.000000
+[Debug] noise: [200, 64] first4: 1.926915 1.487284 0.900717 -2.105521
+[NAR] Graph: 1359 nodes, T_lat=200, variations=1, prefix=255, set=0
+[Debug] temb_t: [2048] first4: -0.012681 -0.004529 -0.033063 -0.011506
+[Debug] hidden_after_input: [202, 2048] first4: -0.001817 0.999774 0.012592 0.992980
+[Debug] layer0_sa_output: [202, 2048] first4: 0.998590 -0.412421 -0.466810 -0.123765
+[Debug] hidden_after_layer0: [202, 2048] first4: 1.075375 -0.053589 -0.072087 0.192148
+[Debug] hidden_after_layer7: [202, 2048] first4: -0.106743 1.461415 -0.372932 -0.838180
+[Debug] hidden_after_layer14: [202, 2048] first4: -0.946127 1.205601 -3.088349 -0.636356
+[Debug] hidden_after_layer21: [202, 2048] first4: 2.376981 2.511718 -2.054704 1.245767
+[Debug] hidden_after_layer27: [202, 2048] first4: 0.283329 -1.149983 -8.045225 4.662145
+[Debug] nar_step0_first: [200, 64] first4: 4.183146 2.053119 0.888669 -2.496233
+[Debug] nar_step0_second: [200, 64] first4: 4.104396 2.129119 0.967819 -2.495236
+[Debug] nar_step0_xt: [200, 64] first4: 1.798653 1.420749 0.870473 -2.027545
+[NAR] Step 1/32, 1134 ms
+[Debug] nar_step1_first: [200, 64] first4: 4.097591 2.114175 1.008156 -2.541911
+[Debug] nar_step1_second: [200, 64] first4: 4.044738 2.006784 0.995864 -2.465385
+[Debug] nar_step1_xt: [200, 64] first4: 1.672255 1.358037 0.839352 -1.950502
+[NAR] Step 2/32, 1143 ms
+[Debug] nar_step2_first: [200, 64] first4: 4.084204 2.009777 1.005016 -2.506312
+[Debug] nar_step2_second: [200, 64] first4: 4.011719 1.906844 0.942745 -2.430780
+[Debug] nar_step2_xt: [200, 64] first4: 1.546888 1.298448 0.809891 -1.874540
+[NAR] Step 3/32, 1147 ms
+[Debug] nar_step3_first: [200, 64] first4: 4.052650 1.843211 0.952072 -2.425253
+[Debug] nar_step3_second: [200, 64] first4: 3.969720 1.748634 0.952276 -2.400080
+[Debug] nar_step3_xt: [200, 64] first4: 1.422835 1.243804 0.780133 -1.799538
+[NAR] Step 4/32, 1149 ms
+[Debug] nar_step4_first: [200, 64] first4: 3.992689 1.611723 0.942553 -2.367041
+[Debug] nar_step4_second: [200, 64] first4: 3.933570 1.504408 0.958097 -2.322782
+[Debug] nar_step4_xt: [200, 64] first4: 1.299911 1.196791 0.750192 -1.726951
+[NAR] Step 5/32, 1153 ms
+[Debug] nar_step5_first: [200, 64] first4: 3.938138 1.410711 0.983715 -2.270052
+[Debug] nar_step5_second: [200, 64] first4: 3.980073 1.375154 1.016911 -2.212370
+[Debug] nar_step5_xt: [200, 64] first4: 1.175533 1.153817 0.718414 -1.657814
+[NAR] Step 6/32, 1155 ms
+[Debug] nar_step6_first: [200, 64] first4: 3.977113 1.331831 0.977836 -2.195007
+[Debug] nar_step6_second: [200, 64] first4: 3.974216 1.289947 1.007687 -2.159158
+[Debug] nar_step6_xt: [200, 64] first4: 1.051339 1.113506 0.686924 -1.590340
+[NAR] Step 7/32, 1154 ms
+[Debug] nar_step7_first: [200, 64] first4: 4.009736 1.263559 1.016838 -2.067797
+[Debug] nar_step7_second: [200, 64] first4: 3.989761 1.228594 1.010971 -2.009444
+[Debug] nar_step7_xt: [200, 64] first4: 0.926659 1.075113 0.655331 -1.527545
+[NAR] Step 8/32, 1155 ms
+[Debug] nar_step8_first: [200, 64] first4: 3.973012 1.202095 0.988491 -1.952972
+[Debug] nar_step8_second: [200, 64] first4: 3.983841 1.179615 0.976639 -1.884088
+[Debug] nar_step8_xt: [200, 64] first4: 0.802164 1.038250 0.624811 -1.468668
+[NAR] Step 9/32, 1155 ms
+[Debug] nar_step9_first: [200, 64] first4: 3.958577 1.201832 0.973950 -1.838081
+[Debug] nar_step9_second: [200, 64] first4: 3.985979 1.136065 0.983772 -1.751995
+[Debug] nar_step9_xt: [200, 64] first4: 0.677602 1.002748 0.594068 -1.413918
+[NAR] Step 10/32, 1156 ms
+[Debug] nar_step10_first: [200, 64] first4: 3.985679 1.083995 1.000979 -1.714029
+[Debug] nar_step10_second: [200, 64] first4: 3.918265 1.098759 0.976373 -1.639747
+[Debug] nar_step10_xt: [200, 64] first4: 0.555156 0.968412 0.563556 -1.362676
+[NAR] Step 11/32, 1157 ms
+[Debug] nar_step11_first: [200, 64] first4: 3.909737 1.027942 0.956485 -1.569688
+[Debug] nar_step11_second: [200, 64] first4: 3.893665 1.018152 0.963479 -1.455567
+[Debug] nar_step11_xt: [200, 64] first4: 0.433479 0.936594 0.533447 -1.317189
+[NAR] Step 12/32, 1167 ms
+[Debug] nar_step12_first: [200, 64] first4: 3.773205 1.031070 0.964409 -1.291402
+[Debug] nar_step12_second: [200, 64] first4: 3.751552 0.961751 0.960118 -1.207592
+[Debug] nar_step12_xt: [200, 64] first4: 0.316243 0.906540 0.503444 -1.279452
+[NAR] Step 13/32, 1158 ms
+[Debug] nar_step13_first: [200, 64] first4: 3.672081 0.962133 0.958740 -1.091553
+[Debug] nar_step13_second: [200, 64] first4: 3.543843 0.886976 0.942024 -0.984647
+[Debug] nar_step13_xt: [200, 64] first4: 0.205498 0.878822 0.474005 -1.248682
+[NAR] Step 14/32, 1161 ms
+[Debug] nar_step14_first: [200, 64] first4: 3.501287 0.861669 0.917001 -0.929201
+[Debug] nar_step14_second: [200, 64] first4: 3.404030 0.762349 0.888167 -0.820924
+[Debug] nar_step14_xt: [200, 64] first4: 0.099122 0.854998 0.446250 -1.223028
+[NAR] Step 15/32, 1162 ms
+[Debug] nar_step15_first: [200, 64] first4: 3.306952 0.743764 0.855946 -0.726089
+[Debug] nar_step15_second: [200, 64] first4: 3.254259 0.710538 0.844739 -0.600944
+[Debug] nar_step15_xt: [200, 64] first4: -0.002573 0.832794 0.419852 -1.204248
+[NAR] Step 16/32, 1163 ms
+[Debug] nar_step16_first: [200, 64] first4: 3.194136 0.679084 0.809109 -0.483270
+[Debug] nar_step16_second: [200, 64] first4: 3.144403 0.588565 0.747782 -0.357561
+[Debug] nar_step16_xt: [200, 64] first4: -0.100836 0.814401 0.396484 -1.193075
+[NAR] Step 17/32, 1163 ms
+[Debug] nar_step17_first: [200, 64] first4: 3.011704 0.631207 0.750975 -0.315905
+[Debug] nar_step17_second: [200, 64] first4: 2.935097 0.623721 0.736529 -0.202690
+[Debug] nar_step17_xt: [200, 64] first4: -0.192558 0.794910 0.373467 -1.186741
+[NAR] Step 18/32, 1164 ms
+[Debug] nar_step18_first: [200, 64] first4: 2.850278 0.603596 0.702316 -0.087718
+[Debug] nar_step18_second: [200, 64] first4: 2.792109 0.548192 0.693421 -0.000888
+[Debug] nar_step18_xt: [200, 64] first4: -0.279811 0.777779 0.351798 -1.186713
+[NAR] Step 19/32, 1165 ms
+[Debug] nar_step19_first: [200, 64] first4: 2.688272 0.550455 0.653935 0.175419
+[Debug] nar_step19_second: [200, 64] first4: 2.637480 0.501510 0.655247 0.214268
+[Debug] nar_step19_xt: [200, 64] first4: -0.362232 0.762107 0.331322 -1.193409
+[NAR] Step 20/32, 1164 ms
+[Debug] nar_step20_first: [200, 64] first4: 2.577713 0.500549 0.568167 0.291816
+[Debug] nar_step20_second: [200, 64] first4: 2.488383 0.479688 0.587110 0.422271
+[Debug] nar_step20_xt: [200, 64] first4: -0.439994 0.747116 0.312974 -1.206605
+[NAR] Step 21/32, 1165 ms
+[Debug] nar_step21_first: [200, 64] first4: 2.424485 0.421067 0.532037 0.559755
+[Debug] nar_step21_second: [200, 64] first4: 2.328907 0.388170 0.510896 0.610411
+[Debug] nar_step21_xt: [200, 64] first4: -0.512773 0.734986 0.297009 -1.225680
+[NAR] Step 22/32, 1166 ms
+[Debug] nar_step22_first: [200, 64] first4: 2.246112 0.405755 0.472788 0.660162
+[Debug] nar_step22_second: [200, 64] first4: 2.151857 0.344273 0.480327 0.756696
+[Debug] nar_step22_xt: [200, 64] first4: -0.580018 0.724228 0.281999 -1.249327
+[NAR] Step 23/32, 1166 ms
+[Debug] nar_step23_first: [200, 64] first4: 2.176030 0.251434 0.416100 0.863242
+[Debug] nar_step23_second: [200, 64] first4: 1.993983 0.228007 0.359149 0.885170
+[Debug] nar_step23_xt: [200, 64] first4: -0.642330 0.717102 0.270775 -1.276988
+[NAR] Step 24/32, 1168 ms
+[Debug] nar_step24_first: [200, 64] first4: 1.950845 0.188462 0.374333 0.968704
+[Debug] nar_step24_second: [200, 64] first4: 1.958975 0.127800 0.335347 0.997437
+[Debug] nar_step24_xt: [200, 64] first4: -0.703548 0.713109 0.260296 -1.308158
+[NAR] Step 25/32, 1170 ms
+[Debug] nar_step25_first: [200, 64] first4: 1.847038 0.085304 0.275827 1.055357
+[Debug] nar_step25_second: [200, 64] first4: 1.752327 0.028308 0.208483 1.134888
+[Debug] nar_step25_xt: [200, 64] first4: -0.758308 0.712224 0.253781 -1.343623
+[NAR] Step 26/32, 1168 ms
+[Debug] nar_step26_first: [200, 64] first4: 1.727773 -0.024197 0.187357 1.214380
+[Debug] nar_step26_second: [200, 64] first4: 1.534255 -0.125126 0.122889 1.272820
+[Debug] nar_step26_xt: [200, 64] first4: -0.806254 0.716134 0.249940 -1.383399
+[NAR] Step 27/32, 1170 ms
+[Debug] nar_step27_first: [200, 64] first4: 1.484851 -0.159857 0.117169 1.305268
+[Debug] nar_step27_second: [200, 64] first4: 1.393885 -0.213167 0.016600 1.358937
+[Debug] nar_step27_xt: [200, 64] first4: -0.849813 0.722796 0.249422 -1.425866
+[NAR] Step 28/32, 1174 ms
+[Debug] nar_step28_first: [200, 64] first4: 1.252938 -0.275520 -0.029380 1.420106
+[Debug] nar_step28_second: [200, 64] first4: 1.212329 -0.336814 -0.062399 1.462150
+[Debug] nar_step28_xt: [200, 64] first4: -0.887698 0.733321 0.251371 -1.471558
+[NAR] Step 29/32, 1171 ms
+[Debug] nar_step29_first: [200, 64] first4: 1.064390 -0.352207 -0.095523 1.515062
+[Debug] nar_step29_second: [200, 64] first4: 1.004669 -0.352951 -0.105385 1.519024
+[Debug] nar_step29_xt: [200, 64] first4: -0.919094 0.744351 0.254665 -1.519027
+[NAR] Step 30/32, 1171 ms
+[Debug] nar_step30_first: [200, 64] first4: 0.998426 -0.374765 -0.133463 1.565193
+[Debug] nar_step30_second: [200, 64] first4: 0.945727 -0.338559 -0.126730 1.575860
+[Debug] nar_step30_xt: [200, 64] first4: -0.948648 0.754931 0.258625 -1.568273
+[NAR] Step 31/32, 1171 ms
+[Debug] nar_step31_first: [200, 64] first4: 0.901890 -0.400116 -0.183334 1.564931
+[Debug] nar_step31_second: [200, 64] first4: 0.881189 -0.383655 -0.178972 1.622610
+[Debug] nar_step31_xt: [200, 64] first4: -0.976185 0.766920 0.264218 -1.618979
+[NAR] Step 32/32, 1180 ms
+[Debug] nar_x0: [200, 64] first4: -0.976185 0.766920 0.264218 -1.618979
+[NAR] Solved: T_lat=200, 1 variations, 32 steps, 37165 ms (1161.4 ms/step)
+[NAR] Song 0 chunk 1/1: 200 frames, cache 255 rows, 37.8 s
+[VAE] Track 1/1: song 0 variation 0
+[VAE] Graph: 571 nodes, T_latent=200
+[VAE] Decoded: T_latent=200 -> T_audio=383936 (8.00s @ 48kHz), 1435 ms
+[Debug] vae_audio: [383936, 2] first4: -0.002857 -0.002734 -0.009394 -0.007267
+[Pipeline] Done: 1 tracks, 8.0 s of audio in 39.3 s (0.2x realtime)
+[WAV] Wrote ggml-nar/output.wav: 383936 samples, 48000 Hz, stereo
+[Synth] Done: 8.0 s of audio, seeds 42 and 42 -> ggml-nar/output.wav
+[Request] Loaded request0.json
+[NAR] steps=32 | YuE2-3B-Q5_K_M.gguf
+[GGML] Running YuE2-3B-Q5_K_M.gguf...
+[GGML] Done, 108 dump files
+[Python] Initializing backbone on cuda (prefix=255, T=200, 32 steps)...
+[Python] Solving...
+[Python] Decoding audio...
+[Python] Done, 107 dump files
+[NAR] Cosine similarities GGML vs Python
+noise: ggml vs python 1.000000
+temb_t: ggml vs python 0.999983
+hidden_after_input: ggml vs python 0.999998
+layer0_sa_output: ggml vs python 0.999955
+hidden_after_layer0: ggml vs python 0.999961
+hidden_after_layer7: ggml vs python 0.999942
+hidden_after_layer14: ggml vs python 0.998655
+hidden_after_layer21: ggml vs python 0.998304
+hidden_after_layer27: ggml vs python 0.999366
+nar_step0_first: ggml vs python 0.999140
+nar_step0_second: ggml vs python 0.999090
+nar_step0_xt: ggml vs python 0.999999
+nar_step5_first: ggml vs python 0.995940
+nar_step5_second: ggml vs python 0.996294
+nar_step5_xt: ggml vs python 0.999942
+nar_step10_first: ggml vs python 0.991922
+nar_step10_second: ggml vs python 0.991315
+nar_step10_xt: ggml vs python 0.999563
+nar_step15_first: ggml vs python 0.986427
+nar_step15_second: ggml vs python 0.986683
+nar_step15_xt: ggml vs python 0.998508
+nar_step20_first: ggml vs python 0.988091
+nar_step20_second: ggml vs python 0.987971
+nar_step20_xt: ggml vs python 0.997284
+nar_step25_first: ggml vs python 0.991566
+nar_step25_second: ggml vs python 0.991990
+nar_step25_xt: ggml vs python 0.996544
+nar_step30_first: ggml vs python 0.994868
+nar_step30_second: ggml vs python 0.995013
+nar_step30_xt: ggml vs python 0.996309
+nar_step31_first: ggml vs python 0.994927
+nar_step31_second: ggml vs python 0.994984
+nar_x0: ggml vs python 0.996283
+vae_audio: ggml vs python 0.981806
+vae_audio (STFT cosine): ggml vs python 0.996323
+[NAR] Error growth GGML vs Python
+nar_step0_xt: cos 0.999999, max_err 0.011146, mean_err 0.001078, mean_A 0.006272, std_A 0.971769, mean_B 0.006283, std_B 0.971735
+nar_step5_xt: cos 0.999942, max_err 0.112695, mean_err 0.006818, mean_A -0.000229, std_A 0.840626, mean_B -0.000423, std_B 0.840954
+nar_step10_xt: cos 0.999563, max_err 0.338080, mean_err 0.015890, mean_A -0.006720, std_A 0.757176, mean_B -0.006644, std_B 0.758312
+nar_step15_xt: cos 0.998508, max_err 0.604201, mean_err 0.029180, mean_A -0.014104, std_A 0.764179, mean_B -0.013461, std_B 0.764733
+nar_step20_xt: cos 0.997284, max_err 0.862382, mean_err 0.044271, mean_A -0.020345, std_A 0.860531, mean_B -0.018803, std_B 0.860107
+nar_step25_xt: cos 0.996544, max_err 1.081428, mean_err 0.058883, mean_A -0.026643, std_A 1.007051, mean_B -0.024145, std_B 1.006429
+nar_step30_xt: cos 0.996309, max_err 1.281476, mean_err 0.071783, mean_A -0.033408, std_A 1.183654, mean_B -0.030187, std_B 1.183187

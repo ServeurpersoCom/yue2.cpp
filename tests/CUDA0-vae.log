@@ -8,7 +8,7 @@ load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-
 [VAE] Backend: CUDA0, Weight buffer: 126.7 MB
 [VAE] Loaded: 6 blocks, upsample=1920x, F32 activations
 [VAE] Graph: 571 nodes, T_latent=64
-[VAE] Decoded: T_latent=64 -> T_audio=122816 (2.56s @ 48kHz)
+[VAE] Decoded: T_latent=64 -> T_audio=122816 (2.56s @ 48kHz), 34 ms
 [Test-VAE] Wrote 245632 samples to tmp/audio.bin
 [GGUF] ../models/YuE2-Vae-F32.gguf: 435 tensors, data at offset 32800
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
@@ -24,7 +24,7 @@ load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-
 [VAE] Graph: 571 nodes, T_latent=96
 [VAE] Graph: 571 nodes, T_latent=88
 [VAE] Graph: 571 nodes, T_latent=24
-[VAE] Tiled decode done: 4 tiles -> T_audio=383936 (8.00s @ 48kHz)
+[VAE] Tiled decode done: 4 tiles -> T_audio=383936 (8.00s @ 48kHz), 69 ms
 [Test-VAE] Wrote 767872 samples to tmp/audio.bin
 [Parity] vae: rel rms 2.098e-03 max abs 3.256e-03 OK
 [Parity] vae-tiled: rel rms 2.216e-03 max abs 3.648e-03 OK

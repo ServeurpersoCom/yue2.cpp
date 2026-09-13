@@ -5,54 +5,201 @@ load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml
 load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
 load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
 [Load] LM backend: CPU (CPU threads: 16)
-[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367168
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
 [LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
 [Qwen3] Attn: Q+K+V fused
 [Qwen3] MLP: gate+up fused
 [WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
 [LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
-[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367168
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
 [Load] NAR backend: CPU (shared)
 [NAR] Attn: Q+K+V fused
 [NAR] MLP: gate+up fused
 [WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
 [NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
-[NAR] Graph: 1387 nodes, T_lat=24, prefix=17
-[Test-NAR] Prefix 17 tokens, T_lat=24, raw_t=0.3500
+[NAR] Graph: 1415 nodes, T_lat=24, variations=1, prefix=17, set=0
+[Test-NAR] Prefix 17 tokens, T_lat=24, M=1, raw_t=0.3500
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
   Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
 load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
 load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
 load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
 [Load] LM backend: CPU (CPU threads: 16)
-[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367168
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
 [LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
 [Qwen3] Attn: Q+K+V fused
 [Qwen3] MLP: gate+up fused
 [WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
 [LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
-[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367168
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
 [Load] NAR backend: CPU (shared)
 [NAR] Attn: Q+K+V fused
 [NAR] MLP: gate+up fused
 [WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
 [NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[NAR] Graph: 1387 nodes, T_lat=8, prefix=17
-[Test-NAR] Prefix 17 tokens, T_lat=8, 8 midpoint steps
+[NAR] Graph: 1499 nodes, T_lat=24, variations=1, prefix=17, set=0
+[Test-NAR] Prefix 17 tokens, T_lat=24, M=1, raw_t=0.3500
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[Load] NAR backend: CPU (shared)
+[NAR] Attn: Q+K+V fused
+[NAR] MLP: gate+up fused
+[WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
+[NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
+[NAR] Graph: 1415 nodes, T_lat=8, variations=1, prefix=17, set=0
+[NAR] Step 1/8, 97 ms
+[NAR] Step 2/8, 97 ms
+[NAR] Step 3/8, 97 ms
+[NAR] Step 4/8, 99 ms
+[NAR] Step 5/8, 97 ms
+[NAR] Step 6/8, 97 ms
+[NAR] Step 7/8, 97 ms
+[NAR] Step 8/8, 97 ms
+[NAR] Solved: T_lat=8, 1 variations, 8 steps, 779 ms (97.4 ms/step)
+[Test-NAR] Prefix 17 tokens, T_lat=8, M=1, 8 midpoint steps
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[Load] NAR backend: CPU (shared)
+[NAR] Attn: Q+K+V fused
+[NAR] MLP: gate+up fused
+[WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
+[NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
+[NAR] Graph: 1499 nodes, T_lat=8, variations=1, prefix=17, set=0
+[NAR] Step 1/8, 98 ms
+[NAR] Step 2/8, 98 ms
+[NAR] Step 3/8, 100 ms
+[NAR] Step 4/8, 98 ms
+[NAR] Step 5/8, 98 ms
+[NAR] Step 6/8, 98 ms
+[NAR] Step 7/8, 98 ms
+[NAR] Step 8/8, 99 ms
+[NAR] Solved: T_lat=8, 1 variations, 8 steps, 787 ms (98.4 ms/step)
+[Test-NAR] Prefix 17 tokens, T_lat=8, M=1, 8 midpoint steps
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[Load] NAR backend: CPU (shared)
+[NAR] Attn: Q+K+V fused
+[NAR] MLP: gate+up fused
+[WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
+[NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
+[NAR] Graph: 1471 nodes, T_lat=24, variations=3, prefix=17, set=0
+[Test-NAR] Prefix 17 tokens, T_lat=24, M=3, raw_t=0.3500
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[Load] NAR backend: CPU (shared)
+[NAR] Attn: Q+K+V fused
+[NAR] MLP: gate+up fused
+[WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
+[NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
+[NAR] Graph: 1555 nodes, T_lat=24, variations=3, prefix=17, set=0
+[Test-NAR] Prefix 17 tokens, T_lat=24, M=3, raw_t=0.3500
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[Load] NAR backend: CPU (shared)
+[NAR] Attn: Q+K+V fused
+[NAR] MLP: gate+up fused
+[WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
+[NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
+[NAR] Graph: 1471 nodes, T_lat=8, variations=2, prefix=17, set=0
+[NAR] Step 1/8, 163 ms
+[NAR] Step 2/8, 161 ms
+[NAR] Step 3/8, 165 ms
+[NAR] Step 4/8, 165 ms
+[NAR] Step 5/8, 162 ms
+[NAR] Step 6/8, 161 ms
+[NAR] Step 7/8, 161 ms
+[NAR] Step 8/8, 162 ms
+[NAR] Solved: T_lat=8, 2 variations, 8 steps, 1301 ms (162.6 ms/step)
+[Test-NAR] Prefix 17 tokens, T_lat=8, M=2, 8 midpoint steps
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] LM backend: CPU (CPU threads: 16)
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[LM-Config] 28L, H=2048, V=184704, Nh=16, Nkv=8, D=128, tied=0
+[Qwen3] Attn: Q+K+V fused
+[Qwen3] MLP: gate+up fused
+[WeightCtx] Loaded 311 tensors, 4131.5 MB into backend
+[LM-KV] Allocated 1 sets x 28 layers (4D batched), 2688.0 MB
+[GGUF] ../models/YuE2-3B-BF16.gguf: 627 tensors, data at offset 5367200
+[Load] NAR backend: CPU (shared)
+[NAR] Attn: Q+K+V fused
+[NAR] MLP: gate+up fused
+[WeightCtx] Loaded 316 tensors, 2698.0 MB into backend
+[NAR] Loaded: 28 layers, latent_dim=64, timestep_shift=1.000
+[NAR] Graph: 1555 nodes, T_lat=8, variations=2, prefix=17, set=0
+[NAR] Step 1/8, 162 ms
+[NAR] Step 2/8, 160 ms
+[NAR] Step 3/8, 160 ms
+[NAR] Step 4/8, 161 ms
+[NAR] Step 5/8, 161 ms
+[NAR] Step 6/8, 160 ms
+[NAR] Step 7/8, 160 ms
+[NAR] Step 8/8, 161 ms
+[NAR] Solved: T_lat=8, 2 variations, 8 steps, 1286 ms (160.8 ms/step)
+[Test-NAR] Prefix 17 tokens, T_lat=8, M=2, 8 midpoint steps
 [Parity] nar: rel rms 8.595e-03 max abs 3.416e-02 OK
+[Parity] nar-clamp: rel rms 8.595e-03 max abs 3.416e-02 OK
 [Parity] nar-ode: rel rms 1.448e-03 max abs 7.528e-03 OK
+[Parity] nar-ode-clamp: rel rms 1.448e-03 max abs 7.528e-03 OK
+[Parity] nar-batch: rel rms 8.358e-03 max abs 4.424e-02 OK
+[Parity] nar-batch-clamp: rel rms 8.358e-03 max abs 4.424e-02 OK
+[Parity] nar-ode-batch: rel rms 2.211e-03 max abs 1.669e-02 OK
+[Parity] nar-ode-batch-clamp: rel rms 2.211e-03 max abs 1.669e-02 OK
