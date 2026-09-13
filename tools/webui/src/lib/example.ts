@@ -1,6 +1,7 @@
 // all example prompts bundled at build time (Vite eager glob).
-// Official YuE2 requests, the repository example and the one the
-// checkpoint ships alongside its weights.
+// Official YuE2 requests: the repository example, the one the checkpoint
+// ships alongside its weights, and the cases of the demo site, covers
+// carrying their melody score.
 
 import type { Yue2Request } from './types.js';
 
@@ -18,6 +19,7 @@ export function example(): Yue2Request {
 		style: String(ex.style),
 		lyrics: String(ex.lyrics),
 		cot: String(ex.cot ?? 'full'),
+		abc: ex.abc ? String(ex.abc) : undefined,
 		abc_sampling: {},
 		semantic_sampling: {}
 	};
