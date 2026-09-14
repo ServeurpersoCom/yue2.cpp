@@ -36,7 +36,7 @@ struct Yue2Request {
     int     steps;    // 32, midpoint steps of the flow matching ODE
 
     // batching: number of songs generated from this prompt. Song i draws
-    // its tokens with lm_seed + i, the mm3 convention of consecutive seeds.
+    // its tokens with lm_seed + i, consecutive seeds.
     int lm_batch_size;  // 1
 
     // number of flow matching variations per song, consecutive noise seeds

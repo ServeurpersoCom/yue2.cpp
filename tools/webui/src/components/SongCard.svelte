@@ -109,45 +109,31 @@
 		return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
 	}
 
-	let transcribing = $state(false);
-
-	// transcribe audio: send the recording to /transcribe, keep the score on
-	// the card and put it in the form as the abc of a melody cover. Only the
-	// card that was analyzed changes; the lyrics and the style stay yours.
-	async function transcribe() {
-		transcribing = true;
+	// transcribe audio: send the recording to /transcribe and keep the score
+	// it heard on the card and in the form. Only the card that was analyzed
+	// changes; the lyrics, the style and the mode stay yours.
+	async function transcribe(melodyOnly: boolean) {
 		try {
-			const jobId = await transcribeSubmit(song.audio, false);
+			const jobId = await transcribeSubmit(song.audio, melodyOnly);
 			await pollJob(jobId);
 			const result = await jobResultTranscribe(jobId);
 			song.score = result.abc ?? '';
-			song.request = { ...song.request, abc: song.score, cot: 'melody' };
+			song.request = { ...song.request, abc: song.score };
 			if (song.id != null) await putSong($state.snapshot(song));
 			app.request.abc = song.score;
-			app.request.cot = 'melody';
 			toast('Transcribed: ' + song.name, 4000, true);
 		} catch (e) {
 			toast('Transcription failed: ' + (e instanceof Error ? e.message : String(e)));
-		} finally {
-			transcribing = false;
 		}
 	}
 
 	// Single action menu: one entry per user intent. Order mirrors a natural
 	// flow (tweak prompt -> read the score -> rename -> grab audio -> destroy).
-	// Destructive entries open a confirm dialog. Transcribe only shows when
-	// the server has a transcriber.
+	// Destructive entries open a confirm dialog.
 	const actionItems: MenuItem[] = $derived([
 		{ icon: Pencil, label: 'Edit prompt', onSelect: load },
-		...(app.props?.transcriber
-			? [
-					{
-						icon: Music,
-						label: transcribing ? 'Transcribing...' : 'Transcribe score',
-						onSelect: transcribe
-					}
-				]
-			: []),
+		{ icon: Music, label: 'Transcribe score', onSelect: () => transcribe(false) },
+		{ icon: Music, label: 'Transcribe melody', onSelect: () => transcribe(true) },
 		{ icon: Type, label: 'Rename song', onSelect: openRename },
 		{ icon: Download, label: 'Download audio', onSelect: downloadAudio },
 		{ icon: Trash2, label: 'Delete this track', onSelect: () => (confirmDeleteOpen = true) },

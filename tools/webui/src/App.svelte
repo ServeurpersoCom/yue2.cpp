@@ -39,10 +39,10 @@
 	});
 </script>
 
-<div class="mm3-app">
+<div class="yue2-app">
 	<header>
 		<span class="header-label">yue2.cpp</span>
-		<span class="header-version">{__ACE_VERSION__}</span>
+		<span class="header-version">{__YUE2_VERSION__}</span>
 		<div class="spacer"></div>
 		<label class="dark-toggle">
 			<input type="checkbox" bind:checked={app.dark} /> Dark
@@ -113,7 +113,7 @@
 		color: var(--fg);
 		min-height: 100dvh;
 	}
-	.mm3-app {
+	.yue2-app {
 		display: flex;
 		flex-direction: column;
 		min-height: 100dvh;

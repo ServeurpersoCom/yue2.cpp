@@ -37,7 +37,6 @@ export interface Yue2Props {
 	version: string;
 	model: string;
 	vae: string;
-	transcriber: string; // the SheetSage2 GGUF, empty when the server has none
 	sample_rate: number;
 	frame_rate: number;
 	context: number;
@@ -52,6 +51,7 @@ export interface Song {
 	created: number;
 	style: string;
 	seed: number; // the LM seed, the one that decides which song it is
+	// length of the audio in seconds, decoded once and cached with the peaks
 	duration: number;
 	// the score the model wrote, editable and resubmittable as abc
 	score: string;

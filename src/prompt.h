@@ -48,6 +48,16 @@ static const Yue2CotMode YUE2_COT_MODES[] = {
     { "off",    YUE2_COT_OFF    },
 };
 
+static bool yue2_cot_parse(const std::string & name, Yue2Cot * cot) {
+    for (const Yue2CotMode & m : YUE2_COT_MODES) {
+        if (name == m.name) {
+            *cot = m.mode;
+            return true;
+        }
+    }
+    return false;
+}
+
 static const char * yue2_instruction(Yue2Cot cot) {
     if (cot == YUE2_COT_OFF) {
         return "Generate music with codec tokens from the given conditions.";

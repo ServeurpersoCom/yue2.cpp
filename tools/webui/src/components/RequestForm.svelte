@@ -19,14 +19,9 @@
 
 	let d = $derived(app.props?.defaults);
 
-	// The server owns the mode list and the default: an unset mode adopts the
-	// published default as soon as the props land, so the menu never sits on a
-	// value the pipeline does not know.
-	$effect(() => {
-		if (!app.request.cot && d?.cot) {
-			app.request.cot = d.cot;
-		}
-	});
+	// The mode menu shows the published default until a mode is picked, so
+	// the request carries a cot only when it is yours.
+	let cot = $derived(app.request.cot || d?.cot || '');
 
 	// resume a pending job after page reload, or land a fresh submission.
 	// shared tail of both the onMount resume and the generate path.
@@ -160,7 +155,7 @@
 			seed: 0,
 			duration: 0,
 			score: '',
-			request: { style: '', lyrics: '', abc_sampling: {}, semantic_sampling: {} },
+			request: emptyRequest(),
 			audio: blob
 		};
 		song.id = await putSong(song);
@@ -318,7 +313,8 @@
 		<span class="field-label">Mode</span>
 		<select
 			class="field-select"
-			bind:value={app.request.cot}
+			value={cot}
+			onchange={(e) => (app.request.cot = e.currentTarget.value)}
 			title="What the autoregressive half writes before the codes."
 		>
 			<option value={COT_FULL}>Full: melody and chords, then codes</option>

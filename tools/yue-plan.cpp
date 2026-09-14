@@ -101,11 +101,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
     Yue2Cot cot;
-    if (r.cot == "full") {
-        cot = YUE2_COT_FULL;
-    } else if (r.cot == "melody") {
-        cot = YUE2_COT_MELODY;
-    } else {
+    if (!yue2_cot_parse(r.cot, &cot) || cot == YUE2_COT_OFF) {
         fprintf(stderr, "[Plan] FATAL: cot must be full or melody to write a score\n");
         return 1;
     }

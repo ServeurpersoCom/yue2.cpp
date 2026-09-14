@@ -58,7 +58,7 @@ export default defineConfig({
 	plugins: [svelte(), viteSingleFile(), yue2GzipPlugin()],
 
 	define: {
-		__ACE_VERSION__: JSON.stringify(gitVersion())
+		__YUE2_VERSION__: JSON.stringify(gitVersion())
 	},
 
 	// dev server: proxy yue-server endpoints

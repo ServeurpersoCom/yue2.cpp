@@ -186,13 +186,13 @@ static SheetSage2 * require_ss2(Yue2Pipeline * p) {
     return m;
 }
 
-// A recording to its ABC score, the melody voices alone unless the chords
-// are wanted. The transcriber holds the GPU for the call and steps aside
-// after it like the other stages.
+// A recording to its ABC score, the chord symbols dropped when only the
+// melody is wanted. The transcriber holds the GPU for the call and steps
+// aside after it like the other stages.
 static bool pipeline_transcribe(Yue2Pipeline * p,
                                 const float *  audio,
                                 int            n_samples,
-                                bool           chords,
+                                bool           melody_only,
                                 std::string *  abc,
                                 std::string *  error) {
     SheetSage2 * m = require_ss2(p);
@@ -201,7 +201,7 @@ static bool pipeline_transcribe(Yue2Pipeline * p,
         return false;
     }
     ModelHandle hold(p->store, m);
-    return ss2_transcribe(m, audio, n_samples, !chords, abc, error, &p->dumper);
+    return ss2_transcribe(m, audio, n_samples, melody_only, abc, error, &p->dumper);
 }
 
 // The cache of one generate: the stages grow it to the sets they need, a
@@ -217,16 +217,6 @@ struct KvScope {
     }
 };
 
-static bool pipeline_cot(const std::string & name, Yue2Cot * cot) {
-    for (const Yue2CotMode & m : YUE2_COT_MODES) {
-        if (name == m.name) {
-            *cot = m.mode;
-            return true;
-        }
-    }
-    return false;
-}
-
 // Renders lm_batch_size songs times synth_batch_size variations, song-major:
 // track song * M + variation. Song i draws its tokens with lm_seed + i in
 // KV set i, variation j draws its noise with seed + j, and the M variations
@@ -238,7 +228,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                               void * cancel_data        = nullptr) {
     Timer   total_timer;
     Yue2Cot cot;
-    if (!pipeline_cot(r.cot, &cot)) {
+    if (!yue2_cot_parse(r.cot, &cot)) {
         fprintf(stderr, "[Pipeline] FATAL: cot must be full, melody or off\n");
         return false;
     }

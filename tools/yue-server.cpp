@@ -450,7 +450,6 @@ static void handle_props(const httplib::Request &, httplib::Response & res) {
     yyjson_mut_obj_add_str(doc, root, "version", YUE2_VERSION);
     yyjson_mut_obj_add_strncpy(doc, root, "model", g_model_path.c_str(), g_model_path.size());
     yyjson_mut_obj_add_strncpy(doc, root, "vae", g_vae_path.c_str(), g_vae_path.size());
-    yyjson_mut_obj_add_strncpy(doc, root, "transcriber", g_transcriber_path.c_str(), g_transcriber_path.size());
     yyjson_mut_obj_add_int(doc, root, "sample_rate", YUE2_SAMPLE_RATE);
     yyjson_mut_obj_add_int(doc, root, "frame_rate", YUE2_FRAME_RATE);
     yyjson_mut_obj_add_int(doc, root, "context", YUE2_CONTEXT);
@@ -481,7 +480,7 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
         return false;
     }
     Yue2Cot cot;
-    if (!pipeline_cot(r->cot, &cot)) {
+    if (!yue2_cot_parse(r->cot, &cot)) {
         res.status = 400;
         res.set_content(json_string("error", "cot must be full, melody or off"), "application/json");
         return false;
@@ -517,26 +516,21 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
     return true;
 }
 
-// Transcribe worker: the uploaded recording becomes the score of a request,
-// abc filled and cot set, melody voices alone for cot melody and the chords
-// kept for cot full. The result is that request as JSON.
-static void run_transcribe(std::shared_ptr<Job> job, std::vector<float> audio, bool chords) {
+// Transcribe worker: the uploaded recording becomes an ABC score, the chord
+// symbols dropped when only the melody is wanted.
+static void run_transcribe(std::shared_ptr<Job> job, std::vector<float> audio, bool melody_only) {
     active_job_set(job);
     fprintf(stderr, "[Server] Transcribe job %s: %.1f s of audio, %s\n", job->id.c_str(),
-            (double) audio.size() / SS2_SAMPLE_RATE, chords ? "chords kept" : "melody only");
+            (double) audio.size() / SS2_SAMPLE_RATE, melody_only ? "melody only" : "full score");
     std::string abc, error;
-    bool        ok = pipeline_transcribe(&g_pipeline, audio.data(), (int) audio.size(), chords, &abc, &error);
+    bool        ok = pipeline_transcribe(&g_pipeline, audio.data(), (int) audio.size(), melody_only, &abc, &error);
     active_job_set(nullptr);
     if (!ok) {
         fprintf(stderr, "[Server] Transcribe job %s failed: %s\n", job->id.c_str(), error.c_str());
         job->status.store(job->cancel.load() ? JobStatus::CANCELLED : JobStatus::FAILED);
         return;
     }
-    Yue2Request r;
-    request_init(&r);
-    r.abc            = abc;
-    r.cot            = chords ? "full" : "melody";
-    job->result_body = request_to_json(&r, false);
+    job->result_body = json_string("abc", abc);
     job->result_mime = "application/json";
     job->status.store(JobStatus::DONE);
 }
@@ -705,42 +699,30 @@ int main(int argc, char ** argv) {
     });
 
     // POST /transcribe, multipart/form-data: an "audio" part (WAV or MP3)
-    // and an optional "request" JSON part whose cot decides between the
-    // melody voices alone (melody, the default) and the chords kept (full)
-    svr.Post("/transcribe", [](const httplib::Request & req, httplib::Response & res) {
-        if (g_transcriber_path.empty()) {
-            res.status = 501;
-            res.set_content(json_string("error", "transcription requires --transcriber"), "application/json");
-            return;
-        }
-        if (!req.is_multipart_form_data() || !req.form.has_file("audio")) {
-            res.status = 400;
-            res.set_content(json_string("error", "multipart audio part required"), "application/json");
-            return;
-        }
-        bool chords = false;
-        if (req.form.has_file("request")) {
-            Yue2Request r;
-            if (!request_parse_json(&r, req.form.get_file("request").content.c_str())) {
+    // and an optional "melody_only" field that drops the chord symbols. The
+    // route is served when a transcriber is given.
+    if (!g_transcriber_path.empty()) {
+        svr.Post("/transcribe", [](const httplib::Request & req, httplib::Response & res) {
+            if (!req.is_multipart_form_data() || !req.form.has_file("audio")) {
                 res.status = 400;
-                res.set_content(json_string("error", "invalid JSON"), "application/json");
+                res.set_content(json_string("error", "multipart audio part required"), "application/json");
                 return;
             }
-            chords = r.cot == "full";
-        }
-        const std::string & file = req.form.get_file("audio").content;
-        int                 T = 0, sr = 0;
-        float *             planar = audio_read_buf((const uint8_t *) file.data(), file.size(), &T, &sr);
-        std::vector<float>  audio;
-        if (!planar || !ss2_mono_24k(planar, T, sr, &audio)) {
-            res.status = 400;
-            res.set_content(json_string("error", "cannot decode audio"), "application/json");
-            return;
-        }
-        auto job = job_create();
-        work_push([job, audio, chords] { run_transcribe(job, audio, chords); });
-        res.set_content(json_string("id", job->id), "application/json");
-    });
+            bool                melody_only = req.form.has_field("melody_only");
+            const std::string & file        = req.form.get_file("audio").content;
+            int                 T = 0, sr = 0;
+            float *             planar = audio_read_buf((const uint8_t *) file.data(), file.size(), &T, &sr);
+            std::vector<float>  audio;
+            if (!planar || !ss2_mono_24k(planar, T, sr, &audio)) {
+                res.status = 400;
+                res.set_content(json_string("error", "cannot decode audio"), "application/json");
+                return;
+            }
+            auto job = job_create();
+            work_push([job, audio, melody_only] { run_transcribe(job, audio, melody_only); });
+            res.set_content(json_string("id", job->id), "application/json");
+        });
+    }
 
     svr.Get("/job", [](const httplib::Request & req, httplib::Response & res) {
         auto job = job_find(req.get_param_value("id"));

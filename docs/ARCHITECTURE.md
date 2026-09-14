@@ -691,11 +691,10 @@ POST /synth                     Submit a generation job, returns job ID
 
 POST /transcribe                Submit a transcription job, returns job ID
   body: multipart/form-data, an "audio" part (WAV or MP3) and an optional
-  "request" JSON part whose cot picks the melody voices alone (melody, the
-  default) or the chord symbols kept (full)
+  "melody_only" field that omits the chord symbols
   response: {"id":"1a2b..."}
-  400 without an audio part or on audio that does not decode,
-  501 when the server runs without --transcriber
+  400 without an audio part or on audio that does not decode
+  the route is served when the server runs with --transcriber
 
 GET  /job?id=N                  Poll job status
   response: {"status":"running|done|failed|cancelled"}
@@ -705,7 +704,7 @@ GET  /job?id=N&result=1         Fetch job result
   one application/json replay request part (the request carrying the
   semantic stream, the score and the seeds of that track) then one
   audio/mpeg or audio/wav part; for a transcription job, application/json,
-  the request whose abc is the score and whose cot names what it keeps
+  the score as {"abc":"X:1\n..."}
   404 while the result is not ready
 
 POST /job?id=N&cancel=1         Cancel a specific job
@@ -772,7 +771,7 @@ Required:
 
 Optional:
   --out <path>           Output score (default: score.abc)
-  --chords               Keep the chord symbols (default: melody voices alone)
+  --melody-only          Omit the chord symbols from the score
 
 Debug:
   --no-fa                Disable flash attention
@@ -781,10 +780,10 @@ Debug:
 
 Audio to score. The recording (any WAV or MP3, any rate, mono or stereo)
 is averaged to mono and resampled to 24 kHz, transcribed by the SheetSage2
-transcriber (`src/sheetsage.h`, `src/notation.h`), and written as ABC: the
-melody voices alone by default, the score the cover path of YuE2 takes as
-its `abc` with `cot` `melody`, or with the chord symbols kept (`--chords`)
-for `cot` `full`. The WebUI does the same from the menu of a song card.
+transcriber (`src/sheetsage.h`, `src/notation.h`), and written as ABC, the
+score a cover of YuE2 takes as its `abc`. The full score carries the chord
+symbols, `--melody-only` keeps the vocal and instrumental voices alone. The
+WebUI offers both from the menu of a song card.
 
 ## neural-codec reference
 

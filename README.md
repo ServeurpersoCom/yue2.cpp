@@ -91,9 +91,9 @@ server.cmd        # Windows
 Open http://localhost:8087 in your browser. The WebUI handles everything:
 write style tags and lyrics, generate, read the score the model composed,
 play and download tracks. Open an MP3 or WAV to get it on a card, then
-Transcribe score from the card menu: the melody lands in the score field
-with cot set to melody, add your lyrics and a style, and the model covers
-the song.
+Transcribe score or Transcribe melody from the card menu: the score lands
+in the score field, pick the matching mode, add your lyrics and a style,
+and the model covers the song.
 
 ## Pipeline
 
@@ -214,9 +214,9 @@ read it, edit it, put it back in the request as `abc`.
 ```
 
 The `yue-transcribe` tool runs the SheetSage2 transcriber on a recording
-and writes the score it hears, the melody voices alone by default, the
-score a cover takes as `abc` with `cot` set to `melody`, or with the chord
-symbols kept for `cot` `full`.
+and writes the score it hears, the one a cover takes as its `abc`. The
+full score carries the chord symbols, `--melody-only` keeps the vocal and
+instrumental voices alone, which is what `cot` `melody` expects.
 
 ```bash
 ./build/yue-transcribe --model models/SheetSage2-Q8_0.gguf --audio song.mp3 --out score.abc

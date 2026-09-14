@@ -1,8 +1,8 @@
 // yue-transcribe.cpp: audio to score CLI
 //
 // Runs the SheetSage2 transcriber on a recording and writes the ABC score
-// it hears: melody voices alone by default, the score the cover path of
-// YuE2 takes as its abc with cot melody, or with the chord symbols kept.
+// it hears, the abc a cover of YuE2 takes. The full score carries the chord
+// symbols, melody-only keeps the vocal and instrumental voices alone.
 #include "audio-io.h"
 #include "sheetsage.h"
 #include "version.h"
@@ -24,7 +24,7 @@ static void print_usage(const char * prog) {
             "\n"
             "Optional:\n"
             "  --out <path>           Output score (default: score.abc)\n"
-            "  --chords               Keep the chord symbols (default: melody voices alone)\n"
+            "  --melody-only          Omit the chord symbols from the score\n"
             "\n"
             "Debug:\n"
             "  --no-fa                Disable flash attention\n"
@@ -37,12 +37,12 @@ int main(int argc, char ** argv) {
         print_usage(argv[0]);
         return 1;
     }
-    const char * model_path = nullptr;
-    const char * audio_path = nullptr;
-    const char * out_path   = "score.abc";
-    const char * dump_dir   = nullptr;
-    bool         chords     = false;
-    bool         no_fa      = false;
+    const char * model_path  = nullptr;
+    const char * audio_path  = nullptr;
+    const char * out_path    = "score.abc";
+    const char * dump_dir    = nullptr;
+    bool         melody_only = false;
+    bool         no_fa       = false;
     for (int i = 1; i < argc; i++) {
         bool last = i + 1 >= argc;
         if (!strcmp(argv[i], "--model") && !last) {
@@ -51,8 +51,8 @@ int main(int argc, char ** argv) {
             audio_path = argv[++i];
         } else if (!strcmp(argv[i], "--out") && !last) {
             out_path = argv[++i];
-        } else if (!strcmp(argv[i], "--chords")) {
-            chords = true;
+        } else if (!strcmp(argv[i], "--melody-only")) {
+            melody_only = true;
         } else if (!strcmp(argv[i], "--no-fa")) {
             no_fa = true;
         } else if (!strcmp(argv[i], "--dump") && !last) {
@@ -85,7 +85,7 @@ int main(int argc, char ** argv) {
     debug_init(&dbg, dump_dir);
 
     std::string abc, error;
-    bool        ok = ss2_transcribe(&m, audio.data(), (int) audio.size(), !chords, &abc, &error, &dbg);
+    bool        ok = ss2_transcribe(&m, audio.data(), (int) audio.size(), melody_only, &abc, &error, &dbg);
     ss2_free(&m);
     if (!ok) {
         fprintf(stderr, "[Transcribe] FATAL: %s\n", error.empty() ? "transcription failed" : error.c_str());
