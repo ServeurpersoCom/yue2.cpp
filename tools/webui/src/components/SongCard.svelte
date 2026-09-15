@@ -127,15 +127,14 @@
 		}
 	}
 
-	// Single action menu: one entry per user intent. Order mirrors a natural
-	// flow (tweak prompt -> read the score -> rename -> grab audio -> destroy).
+	// Single action menu: one entry per user intent.
 	// Destructive entries open a confirm dialog.
 	const actionItems: MenuItem[] = $derived([
 		{ icon: Pencil, label: 'Edit prompt', onSelect: load },
-		{ icon: Music, label: 'Transcribe score', onSelect: () => transcribe(false) },
-		{ icon: Music, label: 'Transcribe melody', onSelect: () => transcribe(true) },
 		{ icon: Type, label: 'Rename song', onSelect: openRename },
 		{ icon: Download, label: 'Download audio', onSelect: downloadAudio },
+		{ icon: Music, label: 'Transcribe score', onSelect: () => transcribe(false) },
+		{ icon: Music, label: 'Transcribe melody', onSelect: () => transcribe(true) },
 		{ icon: Trash2, label: 'Delete this track', onSelect: () => (confirmDeleteOpen = true) },
 		{
 			icon: TriangleAlert,
