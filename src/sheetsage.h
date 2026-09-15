@@ -195,8 +195,9 @@ static void ss2_load_config(SheetSage2 * m, const char * json) {
     c.max_out        = ss2_json_int(root, "max_output_seq_len");
     c.window_seconds = ss2_json_float(root, "input_audio_length");
     c.time_hz        = ss2_json_int(root, "time_hz");
+    int sample_rate  = ss2_json_int(bb, "sampling_rate");
     yyjson_doc_free(doc);
-    if (c.n_layers > SS2_MAX_LAYERS || c.n_dec > SS2_MAX_DEC || ss2_json_int(bb, "sampling_rate") != SS2_SAMPLE_RATE) {
+    if (c.n_layers > SS2_MAX_LAYERS || c.n_dec > SS2_MAX_DEC || sample_rate != SS2_SAMPLE_RATE) {
         fprintf(stderr, "[SheetSage] FATAL: unsupported config\n");
         exit(1);
     }
