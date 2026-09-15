@@ -299,9 +299,9 @@ static void qw3lm_kv_copy(Qw3lmKvCache * kv, int src, int dst) {
     kv->pos[dst] = kv->pos[src];
 }
 
-// Clear one set
-static void qw3lm_kv_reset(Qw3lmKvCache * kv, int set) {
-    kv->pos[set] = 0;
+// Keep the first n rows of one set, the sequence being rewritten from there
+static void qw3lm_kv_trim(Qw3lmKvCache * kv, int set, int n) {
+    kv->pos[set] = n;
     // No rezero needed: stale values past the position are finite (zeroed
     // at alloc, then overwritten by real K/V) and the mask carries neg inf
     // over the padded attention tail.

@@ -47,7 +47,7 @@ static void yue2_prefill(Qwen3LM *                             lm,
             return;
         }
     }
-    qw3lm_kv_reset(kv, s);
+    qw3lm_kv_trim(kv, s, 0);
     qw3lm_forward(lm, kv, prefixes[i].data(), (int) prefixes[i].size(), s, logits + (size_t) s * rows, row0, rows);
     fprintf(stderr, "[AR] %s song %d: %zu tokens prefilled, %.0f ms\n", label, i, prefixes[i].size(), timer.ms());
 }

@@ -334,13 +334,26 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             return false;
         }
     }
-    lm_hold.reset();
+
+    // Acoustic chunks: the context holds the prefix, the codes of the chunk
+    // and their latent block twice over, once as tokens and once as frames
+    const int context = p->kv.cfg.max_seq_len;
+    int       row0, rows;
+    yue2_phase_rows(YUE2_PHASE_SEMANTIC, &row0, &rows);
+    std::vector<float> probe((size_t) rows);
+    std::vector<int>   chunk_sizes(B);
 
     songs->assign((size_t) B * M, {});
     for (int i = 0; i < B; i++) {
         int T_lat = (int) codes[i].tokens.size();
         if (T_lat < 1) {
             fprintf(stderr, "[Pipeline] FATAL: empty semantic stream\n");
+            return false;
+        }
+        chunk_sizes[i] = (context - (int) prefixes[i].size() - 3) / 2;
+        if (chunk_sizes[i] < 1) {
+            fprintf(stderr, "[Pipeline] FATAL: prefix %zu leaves no acoustic context in %d\n", prefixes[i].size(),
+                    context);
             return false;
         }
         for (int j = 0; j < M; j++) {
@@ -359,14 +372,20 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         }
     }
 
-    // Acoustic chunks: the context holds the prefix, the codes of the chunk
-    // and their latent block twice over, once as tokens and once as frames
-    // The chunk prefill logits go nowhere, the semantic window keeps the
-    // graph key of the stage
-    const int context = p->kv.cfg.max_seq_len;
-    int       row0, rows;
-    yue2_phase_rows(YUE2_PHASE_SEMANTIC, &row0, &rows);
-    std::vector<float> probe((size_t) rows);
+    // A generated song spanning several chunks has its first one sealed while
+    // the AR half still holds the GPU: the set carries the whole stream, the
+    // end token takes the row that closes the chunk
+    if (!replay) {
+        for (int i = 0; i < B; i++) {
+            if ((int) codes[i].tokens.size() > chunk_sizes[i]) {
+                int end = YUE2_MUSIC_END;
+                qw3lm_kv_trim(&p->kv, i, (int) prefixes[i].size() + chunk_sizes[i]);
+                qw3lm_forward(lm, &p->kv, &end, 1, i, probe.data(), row0, rows);
+            }
+        }
+    }
+    lm_hold.reset();
+
     std::vector<float> block;
     DebugDumper        quiet;
     debug_init(&quiet, nullptr);
@@ -380,13 +399,9 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     }
     for (int i = 0; i < B; i++) {
         const int prefix_len = (int) prefixes[i].size();
-        const int chunk_size = (context - prefix_len - 3) / 2;
+        const int chunk_size = chunk_sizes[i];
         const int T_lat      = (int) codes[i].tokens.size();
-        if (chunk_size < 1) {
-            fprintf(stderr, "[Pipeline] FATAL: prefix %d leaves no acoustic context in %d\n", prefix_len, context);
-            return false;
-        }
-        int chunks = (T_lat + chunk_size - 1) / chunk_size;
+        int       chunks     = (T_lat + chunk_size - 1) / chunk_size;
         fprintf(stderr, "[NAR] Song %d: %d frames (%.1f s), prefix %d, %d chunk%s of %d, %d variation%s\n", i, T_lat,
                 (float) T_lat / (float) YUE2_FRAME_RATE, prefix_len, chunks, chunks > 1 ? "s" : "", chunk_size, M,
                 M > 1 ? "s" : "");
@@ -395,13 +410,16 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             int   frames = T_lat - start < chunk_size ? T_lat - start : chunk_size;
             int   ar_len = prefix_len + frames + 1;
 
-            // A generated song sits complete in its set when it fits one
-            // chunk. Anything else prefills the chunk sequence, whose logits
-            // go nowhere.
+            // The chunk sequence is the prefix, the codes of the chunk and the
+            // end token. Its head already sits in the set, the whole prefix
+            // from the second chunk on and the sealed sequence of a generated
+            // song for the first one, so only the tail is forwarded and its
+            // logits go nowhere.
             std::vector<int> sequence = prefixes[i];
             sequence.insert(sequence.end(), codes[i].tokens.begin() + start, codes[i].tokens.begin() + start + frames);
             sequence.push_back(YUE2_MUSIC_END);
-            if (replay || frames != T_lat) {
+            const int kept = start > 0 ? prefix_len : (replay ? 0 : ar_len);
+            if (kept < ar_len) {
                 nar_hold.reset();
                 nar                = nullptr;
                 Qwen3LM * lm_chunk = require_lm(p);
@@ -409,8 +427,8 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                     return false;
                 }
                 ModelHandle lm_chunk_hold(p->store, lm_chunk);
-                qw3lm_kv_reset(&p->kv, i);
-                qw3lm_forward(lm_chunk, &p->kv, sequence.data(), (int) sequence.size(), i, probe.data(), row0, rows);
+                qw3lm_kv_trim(&p->kv, i, kept);
+                qw3lm_forward(lm_chunk, &p->kv, sequence.data() + kept, ar_len - kept, i, probe.data(), row0, rows);
             }
             if (!nar) {
                 nar = require_nar(p);
@@ -443,8 +461,8 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                 memcpy((*songs)[(size_t) i * M + j].latents.data() + (size_t) start * YUE2_LATENT_DIM,
                        block.data() + span * j, span * sizeof(float));
             }
-            fprintf(stderr, "[NAR] Song %d chunk %d/%d: %d frames, cache %d rows, %.1f s\n", i, start / chunk_size + 1,
-                    chunks, frames, ar_len, chunk_timer.ms() / 1000.0);
+            fprintf(stderr, "[NAR] Song %d chunk %d/%d: %d frames, cache %d rows, %d forwarded, %.1f s\n", i,
+                    start / chunk_size + 1, chunks, frames, ar_len, ar_len - kept, chunk_timer.ms() / 1000.0);
         }
     }
 
