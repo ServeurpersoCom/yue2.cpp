@@ -317,9 +317,9 @@
 			onchange={(e) => (app.request.cot = e.currentTarget.value)}
 			title="What the autoregressive half writes before the codes."
 		>
-			<option value={COT_FULL}>Full: melody and chords, then codes</option>
-			<option value={COT_MELODY}>Melody: melody only, free accompaniment</option>
-			<option value={COT_OFF}>Off: straight to codes, no score</option>
+			<option value={COT_FULL}>Full: the score carries the chords</option>
+			<option value={COT_MELODY}>Melody: the score carries no chords</option>
+			<option value={COT_OFF}>Off: no score, written or supplied</option>
 		</select>
 	</div>
 	<div class="meta-grid">
