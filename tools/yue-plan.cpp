@@ -86,17 +86,13 @@ int main(int argc, char ** argv) {
             no_fa = true;
         } else if (!strcmp(argv[i], "--clamp-fp16")) {
             clamp_fp16 = true;
-        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
-            print_usage(argv[0]);
-            return 0;
         } else {
-            fprintf(stderr, "[Plan] ERROR: unknown argument %s\n", argv[i]);
+            print_usage(argv[0]);
             return 1;
         }
     }
 
     if (!model_path) {
-        fprintf(stderr, "[Plan] ERROR: --model is required\n\n");
         print_usage(argv[0]);
         return 1;
     }

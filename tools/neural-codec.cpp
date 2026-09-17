@@ -325,17 +325,13 @@ int main(int argc, char ** argv) {
             quant = 8;
         } else if (!strcmp(argv[i], "--q4")) {
             quant = 4;
-        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
-            print_usage(argv[0]);
-            return 0;
         } else {
-            fprintf(stderr, "[VAE] FATAL: unknown argument %s\n", argv[i]);
+            print_usage(argv[0]);
             return 1;
         }
     }
 
     if (!vae_path || mode < 0 || !input_path) {
-        fprintf(stderr, "[VAE] ERROR: --vae, --encode or --decode, and -i are required\n\n");
         print_usage(argv[0]);
         return 1;
     }

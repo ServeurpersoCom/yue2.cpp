@@ -118,17 +118,13 @@ int main(int argc, char ** argv) {
             params.clamp_fp16 = true;
         } else if (!strcmp(argv[i], "--dump") && !last) {
             params.dump_dir = argv[++i];
-        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
-            print_usage(argv[0]);
-            return 0;
         } else {
-            fprintf(stderr, "[Synth] ERROR: unknown argument %s\n", argv[i]);
+            print_usage(argv[0]);
             return 1;
         }
     }
 
     if (!model_path || !vae_path) {
-        fprintf(stderr, "[Synth] ERROR: --model and --vae are required\n\n");
         print_usage(argv[0]);
         return 1;
     }

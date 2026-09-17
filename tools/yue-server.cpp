@@ -647,17 +647,14 @@ int main(int argc, char ** argv) {
             params.no_fa = true;
         } else if (!strcmp(argv[i], "--clamp-fp16")) {
             params.clamp_fp16 = true;
-        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
-            print_usage(argv[0]);
-            return 0;
         } else {
-            fprintf(stderr, "[Server] ERROR: unknown argument %s\n", argv[i]);
+            print_usage(argv[0]);
             return 1;
         }
     }
 
     if (g_model_path.empty() || g_vae_path.empty()) {
-        fprintf(stderr, "[Server] ERROR: --model and --vae are required\n");
+        print_usage(argv[0]);
         return 1;
     }
 
