@@ -57,6 +57,9 @@ int main(int argc, char ** argv) {
             no_fa = true;
         } else if (!strcmp(argv[i], "--dump") && !last) {
             dump_dir = argv[++i];
+        } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
+            print_usage(argv[0]);
+            return 0;
         } else {
             fprintf(stderr, "[Transcribe] ERROR: unknown argument %s\n", argv[i]);
             print_usage(argv[0]);
