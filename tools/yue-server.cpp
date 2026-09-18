@@ -674,6 +674,20 @@ int main(int argc, char ** argv) {
 
     httplib::Server svr;
     g_svr = &svr;
+
+    // SO_REUSEADDR lets us rebind a port still in TIME_WAIT after a restart.
+    // SO_REUSEPORT is deliberately not set: a second instance on the same port
+    // then fails with EADDRINUSE instead of silently sharing the socket and
+    // splitting traffic between two daemons.
+    svr.set_socket_options([](socket_t sock) {
+        int one = 1;
+#ifdef _WIN32
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char *) &one, sizeof(one));
+#else
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+#endif
+    });
+
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 
@@ -767,8 +781,12 @@ int main(int argc, char ** argv) {
 
     fprintf(stderr, "[Server] yue-server %s\n", YUE2_VERSION);
     fprintf(stderr, "[Server] Listening on %s:%d\n", host, port);
+    // A failed bind must reach the caller: a supervisor that reads only the
+    // exit code would otherwise believe the daemon is up.
+    int exit_code = 0;
     if (!svr.listen(host, port)) {
         fprintf(stderr, "[Server] FATAL: cannot bind %s:%d\n", host, port);
+        exit_code = 1;
     }
 
     {
@@ -780,5 +798,5 @@ int main(int argc, char ** argv) {
     pipeline_free(&g_pipeline);
     store_free(g_pipeline.store);
     fprintf(stderr, "[Server] Done\n");
-    return 0;
+    return exit_code;
 }
