@@ -38,7 +38,8 @@
 
 // Named probes of the velocity graph, read by the cossim harness: the key
 // depths of the latent block and the layer 0 attention output
-#define YUE2_NAR_PROBE_LAYERS { 0, 7, 14, 21, 27 }
+#define YUE2_NAR_PROBE_LAYERS \
+    { 0, 7, 14, 21, 27 }
 
 struct Yue2NAR {
     Qwen3LMConfig cfg;  // the backbone config, shared with the AR half

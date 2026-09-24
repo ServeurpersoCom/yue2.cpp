@@ -67,13 +67,13 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    const char *       model_path  = nullptr;
+    const char *       model_path   = nullptr;
     const char *       adapters_dir = nullptr;
-    const char *       vae_path    = nullptr;
-    const char *       score_path  = nullptr;
-    const char *       tokens_path = nullptr;
-    const char *       latent_path = nullptr;
-    const char *       out_path    = nullptr;
+    const char *       vae_path     = nullptr;
+    const char *       score_path   = nullptr;
+    const char *       tokens_path  = nullptr;
+    const char *       latent_path  = nullptr;
+    const char *       out_path     = nullptr;
     Yue2PipelineParams params;
 
     Yue2Request r;
@@ -148,7 +148,7 @@ int main(int argc, char ** argv) {
     ModelStore * store = store_create(EVICT_STRICT);
 
     Yue2Pipeline pipeline;
-    pipeline.store = store;
+    pipeline.store        = store;
     pipeline.adapters_dir = adapters_dir ? adapters_dir : "";
     if (!pipeline_configure(&pipeline, model_path, vae_path, params)) {
         store_free(store);

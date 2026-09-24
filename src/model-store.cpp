@@ -101,8 +101,7 @@ static void evict_adapter_variants(ModelStore * s, const ModelKey & keep) {
             continue;
         }
         GpuEntry & e = it->second;
-        fprintf(stderr, "[Store] Evict %s adapter variant (%.1f MB)\n", e.label,
-                (float) e.bytes / (1024.0f * 1024.0f));
+        fprintf(stderr, "[Store] Evict %s adapter variant (%.1f MB)\n", e.label, (float) e.bytes / (1024.0f * 1024.0f));
         s->handle_to_key.erase(e.ptr);
         e.deleter(e.ptr);
         it = s->gpu.erase(it);

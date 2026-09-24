@@ -156,11 +156,11 @@ static void pipeline_free(Yue2Pipeline * p) {
 // Splits the adapters of a request into the two halves. An adapter that holds
 // nothing for a half, or has a zero scale there, stays out of that half's
 // list, so changing it never reloads the other half.
-static bool pipeline_resolve_adapters(const Yue2Pipeline *     p,
-                                      const Yue2Request &      r,
+static bool pipeline_resolve_adapters(const Yue2Pipeline *       p,
+                                      const Yue2Request &        r,
                                       std::vector<AdapterSpec> * ar,
                                       std::vector<AdapterSpec> * nar,
-                                      std::string *            error) {
+                                      std::string *              error) {
     ar->clear();
     nar->clear();
     for (const auto & a : r.adapters) {

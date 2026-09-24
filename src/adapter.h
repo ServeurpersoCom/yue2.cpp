@@ -45,22 +45,21 @@
 // if they were plain LoRA. Keys that name nothing in the backbone (a custom
 // conditioning branch, a tokenizer head) are counted and reported, never merged.
 
+#include "ggml-alloc.h"
+#include "ggml-backend.h"
+#include "ggml.h"
 #include "gguf-weights.h"
 #include "safetensors.h"
 #include "weight-ctx.h"
 #include "yyjson.h"
 
-#include "ggml-alloc.h"
-#include "ggml-backend.h"
-#include "ggml.h"
-
-#include <filesystem>
 #include <sys/stat.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <string>
@@ -138,11 +137,11 @@ enum AdapterRole {
 };
 
 struct AdapterKey {
-    AdapterHalf  half;
-    std::string  module;  // backbone module, "model.layers.3.nar_mlp.up_proj", "vae2llm"
-    bool         bias;    // targets module.bias instead of module.weight
-    bool         fused;   // qkv_proj or gate_up_proj, split by rows at merge
-    AdapterRole  role;
+    AdapterHalf half;
+    std::string module;  // backbone module, "model.layers.3.nar_mlp.up_proj", "vae2llm"
+    bool        bias;    // targets module.bias instead of module.weight
+    bool        fused;   // qkv_proj or gate_up_proj, split by rows at merge
+    AdapterRole role;
 };
 
 static bool adapter_ends_with(const std::string & s, const char * suffix, std::string * head) {
@@ -166,9 +165,13 @@ static bool adapter_starts_with(const std::string & s, const char * prefix, std:
 // GGUF style site tags to backbone module paths, "attn_q" to "self_attn.q_proj"
 static bool adapter_native_site(const std::string & tag, std::string * path) {
     static const char * map[][2] = {
-        { "attn_q", "self_attn.q_proj" },     { "attn_k", "self_attn.k_proj" }, { "attn_v", "self_attn.v_proj" },
-        { "attn_output", "self_attn.o_proj" }, { "ffn_gate", "mlp.gate_proj" },  { "ffn_up", "mlp.up_proj" },
-        { "ffn_down", "mlp.down_proj" },
+        { "attn_q",      "self_attn.q_proj" },
+        { "attn_k",      "self_attn.k_proj" },
+        { "attn_v",      "self_attn.v_proj" },
+        { "attn_output", "self_attn.o_proj" },
+        { "ffn_gate",    "mlp.gate_proj"    },
+        { "ffn_up",      "mlp.up_proj"      },
+        { "ffn_down",    "mlp.down_proj"    },
     };
     bool        nar  = false;
     std::string site = tag;
@@ -198,20 +201,34 @@ static bool adapter_parse_key(const std::string & raw, AdapterKey * out) {
         const char * suffix;
         AdapterRole  role;
     } roles[] = {
-        { ".lora_A.default.weight", ROLE_LORA_A }, { ".lora_B.default.weight", ROLE_LORA_B },
-        { ".lora_A.weight", ROLE_LORA_A },         { ".lora_B.weight", ROLE_LORA_B },
-        { ".lora_down.weight", ROLE_LORA_A },      { ".lora_up.weight", ROLE_LORA_B },
-        { ".lora.down.weight", ROLE_LORA_A },      { ".lora.up.weight", ROLE_LORA_B },
-        { ".lora_A", ROLE_LORA_A },                { ".lora_B", ROLE_LORA_B },
-        { ".lora_a.weight", ROLE_LORA_A },         { ".lora_b.weight", ROLE_LORA_B },
-        { ".lora_a", ROLE_LORA_A },                { ".lora_b", ROLE_LORA_B },
-        { ".lora_alpha", ROLE_ALPHA },             { ".alpha", ROLE_ALPHA },
-        { ".lokr_w2_a", ROLE_LOKR_W2A },           { ".lokr_w2_b", ROLE_LOKR_W2B },
-        { ".lokr_w1_a", ROLE_LOKR_W1A },           { ".lokr_w1_b", ROLE_LOKR_W1B },
-        { ".lokr_w1", ROLE_LOKR_W1 },              { ".lokr_w2", ROLE_LOKR_W2 },
-        { ".diff_b", ROLE_DIFF },                  { ".diff", ROLE_DIFF },
-        { ".weight", ROLE_FULL },                  { ".bias", ROLE_FULL },
+        { ".lora_A.default.weight", ROLE_LORA_A   },
+        { ".lora_B.default.weight", ROLE_LORA_B   },
+        { ".lora_A.weight",         ROLE_LORA_A   },
+        { ".lora_B.weight",         ROLE_LORA_B   },
+        { ".lora_down.weight",      ROLE_LORA_A   },
+        { ".lora_up.weight",        ROLE_LORA_B   },
+        { ".lora.down.weight",      ROLE_LORA_A   },
+        { ".lora.up.weight",        ROLE_LORA_B   },
+        { ".lora_A",                ROLE_LORA_A   },
+        { ".lora_B",                ROLE_LORA_B   },
+        { ".lora_a.weight",         ROLE_LORA_A   },
+        { ".lora_b.weight",         ROLE_LORA_B   },
+        { ".lora_a",                ROLE_LORA_A   },
+        { ".lora_b",                ROLE_LORA_B   },
+        { ".lora_alpha",            ROLE_ALPHA    },
+        { ".alpha",                 ROLE_ALPHA    },
+        { ".lokr_w2_a",             ROLE_LOKR_W2A },
+        { ".lokr_w2_b",             ROLE_LOKR_W2B },
+        { ".lokr_w1_a",             ROLE_LOKR_W1A },
+        { ".lokr_w1_b",             ROLE_LOKR_W1B },
+        { ".lokr_w1",               ROLE_LOKR_W1  },
+        { ".lokr_w2",               ROLE_LOKR_W2  },
+        { ".diff_b",                ROLE_DIFF     },
+        { ".diff",                  ROLE_DIFF     },
+        { ".weight",                ROLE_FULL     },
+        { ".bias",                  ROLE_FULL     },
     };
+
     bool found = false;
     bool bias  = false;
     for (const auto & r : roles) {
@@ -301,9 +318,8 @@ static bool adapter_parse_key(const std::string & raw, AdapterKey * out) {
     }
 
     static const char * sites[] = {
-        "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj",  "self_attn.o_proj",
-        "mlp.gate_proj",    "mlp.up_proj",      "mlp.down_proj",     "self_attn.qkv_proj",
-        "mlp.gate_up_proj",
+        "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj",   "self_attn.o_proj", "mlp.gate_proj",
+        "mlp.up_proj",      "mlp.down_proj",    "self_attn.qkv_proj", "mlp.gate_up_proj",
     };
     std::string plain = nar ? site.substr(4) : site;
     bool        known = false;
@@ -593,10 +609,10 @@ struct AdapterModule {
 
 // One contribution to one GGUF tensor, its factors already on the host in F32
 struct AdapterTerm {
-    AdapterRole        kind;    // ROLE_LORA_A for LoRA, ROLE_LOKR_W1, ROLE_DIFF, ROLE_FULL
-    float              scale;   // user scale times alpha over rank
-    std::vector<float> f0;      // LoRA A [rank, in], LoKr w1 slice [l, b], diff or full
-    std::vector<float> f1;      // LoRA B rows [rows, rank], LoKr W2 [c, d]
+    AdapterRole        kind;                            // ROLE_LORA_A for LoRA, ROLE_LOKR_W1, ROLE_DIFF, ROLE_FULL
+    float              scale;                           // user scale times alpha over rank
+    std::vector<float> f0;                              // LoRA A [rank, in], LoKr w1 slice [l, b], diff or full
+    std::vector<float> f1;                              // LoRA B rows [rows, rank], LoKr W2 [c, d]
     int64_t            rank = 0;
     int64_t            l = 0, bcols = 0, c = 0, d = 0;  // LoKr kron dims
 };
@@ -605,7 +621,7 @@ struct AdapterTerm {
 static bool adapter_fused_parts(const GGUFModel &                              gf,
                                 const std::string &                            module,
                                 std::vector<std::pair<std::string, int64_t>> * parts) {
-    std::string head;
+    std::string              head;
     std::vector<std::string> names;
     if (adapter_ends_with(module, "qkv_proj", &head)) {
         names = { head + "q_proj", head + "k_proj", head + "v_proj" };
@@ -627,13 +643,13 @@ static bool adapter_fused_parts(const GGUFModel &                              g
 // Reads one adapter file into per tensor terms for one half. Returns false
 // with a reason on anything that cannot merge exactly: a shape that does not
 // match the backbone, a dtype we cannot read, a factor without its pair.
-static bool adapter_collect(const std::string &                                  file,
-                            const AdapterConfig &                                config,
-                            AdapterHalf                                          half,
-                            float                                                user_scale,
-                            const GGUFModel &                                    gf,
-                            std::map<std::string, std::vector<AdapterTerm>> *    terms,
-                            std::string *                                        error) {
+static bool adapter_collect(const std::string &                               file,
+                            const AdapterConfig &                             config,
+                            AdapterHalf                                       half,
+                            float                                             user_scale,
+                            const GGUFModel &                                 gf,
+                            std::map<std::string, std::vector<AdapterTerm>> * terms,
+                            std::string *                                     error) {
     STFile st = {};
     if (!st_open(&st, file.c_str())) {
         *error = "cannot read " + file;
@@ -654,17 +670,39 @@ static bool adapter_collect(const std::string &                                 
         AdapterModule & m  = modules[id];
         m.fused            = k.fused;
         switch (k.role) {
-            case ROLE_LORA_A:   m.a = &e; break;
-            case ROLE_LORA_B:   m.b = &e; break;
-            case ROLE_ALPHA:    m.alpha = &e; break;
-            case ROLE_LOKR_W1:  m.w1 = &e; break;
-            case ROLE_LOKR_W1A: m.w1a = &e; break;
-            case ROLE_LOKR_W1B: m.w1b = &e; break;
-            case ROLE_LOKR_W2:  m.w2 = &e; break;
-            case ROLE_LOKR_W2A: m.w2a = &e; break;
-            case ROLE_LOKR_W2B: m.w2b = &e; break;
-            case ROLE_DIFF:     m.diff = &e; break;
-            case ROLE_FULL:     m.full = &e; break;
+            case ROLE_LORA_A:
+                m.a = &e;
+                break;
+            case ROLE_LORA_B:
+                m.b = &e;
+                break;
+            case ROLE_ALPHA:
+                m.alpha = &e;
+                break;
+            case ROLE_LOKR_W1:
+                m.w1 = &e;
+                break;
+            case ROLE_LOKR_W1A:
+                m.w1a = &e;
+                break;
+            case ROLE_LOKR_W1B:
+                m.w1b = &e;
+                break;
+            case ROLE_LOKR_W2:
+                m.w2 = &e;
+                break;
+            case ROLE_LOKR_W2A:
+                m.w2a = &e;
+                break;
+            case ROLE_LOKR_W2B:
+                m.w2b = &e;
+                break;
+            case ROLE_DIFF:
+                m.diff = &e;
+                break;
+            case ROLE_FULL:
+                m.full = &e;
+                break;
         }
     }
 
@@ -728,8 +766,8 @@ static bool adapter_collect(const std::string &                                 
             int64_t rank = m.a->shape[0];
             int64_t in   = m.a->shape[1];
             if (m.b->shape[0] != total_rows) {
-                return fail("LoRA output rows " + std::to_string(m.b->shape[0]) + " != " +
-                            std::to_string(total_rows) + " on " + module);
+                return fail("LoRA output rows " + std::to_string(m.b->shape[0]) + " != " + std::to_string(total_rows) +
+                            " on " + module);
             }
             std::vector<float> a, b;
             if (!read(m.a, &a) || !read(m.b, &b)) {
@@ -741,8 +779,8 @@ static bool adapter_collect(const std::string &                                 
             for (const auto & p : parts) {
                 struct ggml_tensor * t = ggml_get_tensor(gf.meta, (p.first + ".weight").c_str());
                 if (t->ne[0] != in) {
-                    return fail("LoRA input width " + std::to_string(in) + " != " + std::to_string(t->ne[0]) +
-                                " on " + p.first);
+                    return fail("LoRA input width " + std::to_string(in) + " != " + std::to_string(t->ne[0]) + " on " +
+                                p.first);
                 }
                 AdapterTerm term;
                 term.kind  = ROLE_LORA_A;
@@ -762,8 +800,7 @@ static bool adapter_collect(const std::string &                                 
         if (has_w1) {
             bool factor    = m.w2a && m.w2b;
             bool factor_w1 = m.w1a && m.w1b;
-            if (factor == (m.w2 != nullptr) || factor_w1 == (m.w1 != nullptr) ||
-                (m.w1 && m.w1->n_dims != 2)) {
+            if (factor == (m.w2 != nullptr) || factor_w1 == (m.w1 != nullptr) || (m.w1 && m.w1->n_dims != 2)) {
                 return fail("incomplete LoKr module " + module);
             }
             std::vector<float> w1, w2;
@@ -831,12 +868,13 @@ static bool adapter_collect(const std::string &                                 
             // the rows this file holds for the module: a native split file
             // carries the w1 slice of its own projection already
             if (a_rows * c != total_rows) {
-                return fail("LoKr rows " + std::to_string(a_rows * c) + " != " + std::to_string(total_rows) +
-                            " on " + module);
+                return fail("LoKr rows " + std::to_string(a_rows * c) + " != " + std::to_string(total_rows) + " on " +
+                            module);
             }
-            float dim     = lokr_dim > 0.0f ? lokr_dim : (float) r;
-            float scaling = user_scale * ((!(factor || factor_w1) || alpha <= 0.0f || dim <= 0.0f) ? 1.0f : alpha / dim);
-            int64_t row0  = 0;
+            float dim = lokr_dim > 0.0f ? lokr_dim : (float) r;
+            float scaling =
+                user_scale * ((!(factor || factor_w1) || alpha <= 0.0f || dim <= 0.0f) ? 1.0f : alpha / dim);
+            int64_t row0 = 0;
             for (const auto & p : parts) {
                 struct ggml_tensor * t = ggml_get_tensor(gf.meta, (p.first + ".weight").c_str());
                 if (row0 % c != 0 || p.second % c != 0 || t->ne[0] != b_cols * d) {
@@ -940,15 +978,16 @@ static bool adapter_merge_tensor(WeightCtx *                      wctx,
         fprintf(stderr, "[Adapter] ERROR: staged size of %s disagrees with its shape\n", ggml_get_name(pc->tensor));
         return false;
     }
-    bool encode_ok = adapter_backend_can_encode(backend, ttype);
-    bool decode_ok = adapter_backend_can_decode(backend, ttype);
-    const struct ggml_type_traits * traits = ggml_get_type_traits(ttype);
+    bool                            encode_ok = adapter_backend_can_encode(backend, ttype);
+    bool                            decode_ok = adapter_backend_can_decode(backend, ttype);
+    const struct ggml_type_traits * traits    = ggml_get_type_traits(ttype);
     if (!decode_ok && !traits->to_float) {
-        fprintf(stderr, "[Adapter] ERROR: cannot decode %s (%s) to merge into it\n", ggml_get_name(pc->tensor), ggml_type_name(ttype));
+        fprintf(stderr, "[Adapter] ERROR: cannot decode %s (%s) to merge into it\n", ggml_get_name(pc->tensor),
+                ggml_type_name(ttype));
         return false;
     }
 
-    size_t                  meta   = ggml_tensor_overhead() * (16 + 16 * terms.size()) + ggml_graph_overhead() + 64 * 1024;
+    size_t meta = ggml_tensor_overhead() * (16 + 16 * terms.size()) + ggml_graph_overhead() + 64 * 1024;
     struct ggml_init_params params = { meta, NULL, true };
     struct ggml_context *   ctx    = ggml_init(params);
     if (!ctx) {
@@ -957,9 +996,9 @@ static bool adapter_merge_tensor(WeightCtx *                      wctx,
 
     std::vector<std::pair<struct ggml_tensor *, const std::vector<float> *>> uploads;
     // a type the backend cannot decode is decoded here and goes up as F32
-    std::vector<float>   host_base;
-    struct ggml_tensor * tbase = nullptr;
-    struct ggml_tensor * tbf   = nullptr;
+    std::vector<float>                                                       host_base;
+    struct ggml_tensor *                                                     tbase = nullptr;
+    struct ggml_tensor *                                                     tbf   = nullptr;
     if (decode_ok) {
         tbase = ggml_new_tensor_2d(ctx, ttype, ne0, ne1);
         tbf   = ttype == GGML_TYPE_F32 ? tbase : ggml_cast(ctx, tbase, GGML_TYPE_F32);
@@ -984,8 +1023,8 @@ static bool adapter_merge_tensor(WeightCtx *                      wctx,
             struct ggml_tensor * tb_r = ggml_cast(ctx, ggml_cast(ctx, tb, GGML_TYPE_BF16), GGML_TYPE_F32);
             struct ggml_tensor * ta_t = ggml_cont(ctx, ggml_transpose(ctx, ta_r));
             delta                     = ggml_mul_mat(ctx, ta_t, tb_r);
-            delta = ggml_cast(ctx, ggml_cast(ctx, delta, GGML_TYPE_BF16), GGML_TYPE_F32);
-            delta = ggml_scale(ctx, delta, t.scale);
+            delta                     = ggml_cast(ctx, ggml_cast(ctx, delta, GGML_TYPE_BF16), GGML_TYPE_F32);
+            delta                     = ggml_scale(ctx, delta, t.scale);
         } else if (t.kind == ROLE_LOKR_W1) {
             // kron(w1 [l, b], W2 [c, d]) = [l*c, b*d], the layout of the LyCORIS path in acestep.cpp
             int64_t              a = t.l, b = t.bcols, c = t.c, d = t.d;
@@ -993,13 +1032,13 @@ static bool adapter_merge_tensor(WeightCtx *                      wctx,
             struct ggml_tensor * tw2 = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, d, c);
             uploads.push_back({ tw1, &t.f0 });
             uploads.push_back({ tw2, &t.f1 });
-            struct ggml_tensor * w1s   = ggml_scale(ctx, tw1, t.scale);
-            struct ggml_tensor * outer = ggml_mul_mat(ctx, ggml_reshape_2d(ctx, w1s, 1, a * b),
-                                                      ggml_reshape_2d(ctx, tw2, 1, c * d));
-            struct ggml_tensor * k4    = ggml_reshape_4d(ctx, outer, b, a, d, c);
-            struct ggml_tensor * kp    = ggml_cont(ctx, ggml_permute(ctx, k4, 1, 3, 0, 2));
-            delta                      = ggml_reshape_2d(ctx, kp, b * d, a * c);
-            delta = ggml_cast(ctx, ggml_cast(ctx, delta, GGML_TYPE_BF16), GGML_TYPE_F32);
+            struct ggml_tensor * w1s = ggml_scale(ctx, tw1, t.scale);
+            struct ggml_tensor * outer =
+                ggml_mul_mat(ctx, ggml_reshape_2d(ctx, w1s, 1, a * b), ggml_reshape_2d(ctx, tw2, 1, c * d));
+            struct ggml_tensor * k4 = ggml_reshape_4d(ctx, outer, b, a, d, c);
+            struct ggml_tensor * kp = ggml_cont(ctx, ggml_permute(ctx, k4, 1, 3, 0, 2));
+            delta                   = ggml_reshape_2d(ctx, kp, b * d, a * c);
+            delta                   = ggml_cast(ctx, ggml_cast(ctx, delta, GGML_TYPE_BF16), GGML_TYPE_F32);
         } else {
             struct ggml_tensor * tw = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, ne0, ne1);
             uploads.push_back({ tw, &t.f0 });
@@ -1194,8 +1233,7 @@ static std::vector<AdapterEntry> adapter_scan(const std::string & dir) {
 // Resolves a request name against the adapter directory. Names are plain
 // entries of the directory, never paths.
 static bool adapter_resolve(const std::string & dir, const std::string & name, std::string * path) {
-    if (dir.empty() || name.empty() || name == "." || name == ".." ||
-        name.find_first_of("/\\:") != std::string::npos) {
+    if (dir.empty() || name.empty() || name == "." || name == ".." || name.find_first_of("/\\:") != std::string::npos) {
         return false;
     }
     std::string p = dir + "/" + name;
