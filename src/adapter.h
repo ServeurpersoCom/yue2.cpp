@@ -553,6 +553,10 @@ static AdapterInfo adapter_inspect(const std::string & path) {
         }
         for (const auto & e : st.entries) {
             AdapterKey k;
+            // HOT-Step's trainer marks its files with hot_step.* tensors of its own
+            if (e.name.rfind("hot_step.", 0) == 0) {
+                continue;
+            }
             if (!adapter_parse_key(e.name, &k)) {
                 if (info.ignored++ == 0) {
                     info.first_ignored = e.name;
