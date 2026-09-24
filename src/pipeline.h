@@ -55,11 +55,11 @@ struct Yue2Pipeline {
     std::string        transcriber_path;  // the SheetSage2 GGUF, empty without one
     std::string        adapters_dir;      // where request adapter names resolve, empty without one
     Yue2PipelineParams params;
+    DebugDumper        dumper;
 
     // The adapters of the running request, per half, as the store keys them
     std::vector<AdapterSpec> ar_adapters;
     std::vector<AdapterSpec> nar_adapters;
-    DebugDumper        dumper;
 
     // The cache, bound at configure to its config with the context override
     // and to the shared backend, held for the process lifetime
@@ -153,10 +153,6 @@ static void pipeline_free(Yue2Pipeline * p) {
     p->configured = false;
 }
 
-// Require helpers: one place builds the store key of each module from the
-// configured paths, and applies the runtime knobs after every require
-// (idempotent on cache hits). The NAR bakes them into its graph at build
-// time, the LM reads them at every forward.
 // Splits the adapters of a request into the two halves. An adapter that holds
 // nothing for a half, or has a zero scale there, stays out of that half's
 // list, so changing it never reloads the other half.
@@ -178,8 +174,8 @@ static bool pipeline_resolve_adapters(const Yue2Pipeline *     p,
             *error = info.error;
             return false;
         }
-        float ar_scale  = a.ar_scale >= 0.0f ? a.ar_scale : a.scale;
-        float nar_scale = a.nar_scale >= 0.0f ? a.nar_scale : a.scale;
+        float ar_scale  = std::isnan(a.ar_scale) ? a.scale : a.ar_scale;
+        float nar_scale = std::isnan(a.nar_scale) ? a.scale : a.nar_scale;
         if (info.ar_keys > 0 && ar_scale != 0.0f) {
             ar->push_back({ path, ar_scale });
         }
@@ -190,6 +186,10 @@ static bool pipeline_resolve_adapters(const Yue2Pipeline *     p,
     return true;
 }
 
+// Require helpers: one place builds the store key of each module from the
+// configured paths, and applies the runtime knobs after every require
+// (idempotent on cache hits). The NAR bakes them into its graph at build
+// time, the LM reads them at every forward.
 static Qwen3LM * require_lm(Yue2Pipeline * p) {
     ModelKey  k = { MODEL_LM, p->model_path, p->ar_adapters };
     Qwen3LM * m = store_require_lm(p->store, k);

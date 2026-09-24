@@ -7,18 +7,19 @@
 
 #include "sampling.h"
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 // One adapter of a request, named as it sits in the server adapter directory.
 // scale applies to both halves, ar_scale and nar_scale override it for one
-// half when set (negative means unset). A zero leaves that half untouched.
+// half when set, and a zero leaves that half untouched.
 struct Yue2RequestAdapter {
     std::string name;
     float       scale     = 1.0f;
-    float       ar_scale  = -1.0f;
-    float       nar_scale = -1.0f;
+    float       ar_scale  = NAN;
+    float       nar_scale = NAN;
 };
 
 struct Yue2Request {

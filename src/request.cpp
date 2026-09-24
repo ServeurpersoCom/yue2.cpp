@@ -293,10 +293,10 @@ std::string request_to_json(const Yue2Request * r, bool sparse) {
             yyjson_mut_val * item = yyjson_mut_arr_add_obj(doc, arr);
             yyjson_mut_obj_add_strncpy(doc, item, "name", a.name.c_str(), a.name.size());
             yyjson_mut_obj_add_real(doc, item, "scale", a.scale);
-            if (a.ar_scale >= 0.0f) {
+            if (!std::isnan(a.ar_scale)) {
                 yyjson_mut_obj_add_real(doc, item, "ar_scale", a.ar_scale);
             }
-            if (a.nar_scale >= 0.0f) {
+            if (!std::isnan(a.nar_scale)) {
                 yyjson_mut_obj_add_real(doc, item, "nar_scale", a.nar_scale);
             }
         }
