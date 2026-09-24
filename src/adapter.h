@@ -40,8 +40,10 @@
 //   diff   W += s * D                           ComfyUI .diff / .diff_b
 //   full   W  = W + s * (F - W)                 whole replacement weights
 //
-// Keys that name nothing in the backbone (a custom conditioning branch, a
-// tokenizer head) are counted and reported, never merged.
+// Parameterisations whose delta is not B @ A - DoRA, LoHa, HiRA, a PiSSA
+// delta tied to a residual base - are refused by name rather than merged as
+// if they were plain LoRA. Keys that name nothing in the backbone (a custom
+// conditioning branch, a tokenizer head) are counted and reported, never merged.
 
 #include "gguf-weights.h"
 #include "safetensors.h"
@@ -357,24 +359,33 @@ static std::map<std::string, std::string> adapter_read_metadata(const STFile & s
     return out;
 }
 
-// lora_alpha (or alpha) of an adapter_config.json beside the weights, 0 when absent
-static float adapter_read_config_alpha(const std::string & dir) {
-    std::string  path = dir + "/adapter_config.json";
-    yyjson_doc * doc  = yyjson_read_file(path.c_str(), 0, NULL, NULL);
+// What an adapter_config.json beside the weights says about the scale: its
+// lora_alpha (or alpha), 0 when absent, and whether it trained rank-stabilised
+// (use_rslora), whose scale is alpha / sqrt(rank) instead of alpha / rank
+struct AdapterConfig {
+    float alpha  = 0.0f;
+    bool  rslora = false;
+};
+
+static AdapterConfig adapter_read_config(const std::string & dir) {
+    AdapterConfig config;
+    std::string   path = dir + "/adapter_config.json";
+    yyjson_doc *  doc  = yyjson_read_file(path.c_str(), 0, NULL, NULL);
     if (!doc) {
-        return 0.0f;
+        return config;
     }
-    float        alpha = 0.0f;
-    yyjson_val * root  = yyjson_doc_get_root(doc);
+    yyjson_val * root = yyjson_doc_get_root(doc);
     for (const char * key : { "lora_alpha", "alpha" }) {
         yyjson_val * v = yyjson_obj_get(root, key);
         if (v && yyjson_is_num(v)) {
-            alpha = (float) yyjson_get_num(v);
+            config.alpha = (float) yyjson_get_num(v);
             break;
         }
     }
+    yyjson_val * rs = yyjson_obj_get(root, "use_rslora");
+    config.rslora   = rs && yyjson_is_bool(rs) && yyjson_get_bool(rs);
     yyjson_doc_free(doc);
-    return alpha;
+    return config;
 }
 
 static bool adapter_is_dir(const std::string & path) {
@@ -453,6 +464,34 @@ static std::vector<std::string> adapter_files(const std::string & path) {
     return files;
 }
 
+// A parameterisation whose delta is not B @ A (or kron) cannot be merged as
+// one; empty when the file is plain LoRA, LoKr or a diff.
+static std::string adapter_unsupported(const STFile & st, const std::map<std::string, std::string> & meta) {
+    for (const auto & e : st.entries) {
+        std::string head;
+        if (adapter_ends_with(e.name, ".lora_magnitude_vector", &head) ||
+            adapter_ends_with(e.name, ".lora_magnitude_vector.weight", &head) ||
+            adapter_ends_with(e.name, ".dora_scale", &head)) {
+            return "DoRA adapters are not supported, only LoRA and LoKr";
+        }
+        if (e.name.find(".hada_w") != std::string::npos) {
+            return "LoHa adapters are not supported, only LoRA and LoKr";
+        }
+        if (e.name == "hot_step.param_method" && e.dtype == "F32" && adapter_numel(e) == 1) {
+            float method = 0.0f;
+            memcpy(&method, st_data(st, e), sizeof(float));
+            if (method != 0.0f) {
+                return "this adapter applies as DoRA, HiRA, LoHa or a PiSSA delta, not as plain LoRA";
+            }
+        }
+    }
+    auto it = meta.find("hot_step_pissa_delta");
+    if (it != meta.end()) {
+        return "a PiSSA delta adapter needs its residual base; export it as plain LoRA";
+    }
+    return {};
+}
+
 // What an adapter holds, read from the safetensors headers only
 struct AdapterInfo {
     bool                     ok = false;
@@ -481,6 +520,12 @@ static AdapterInfo adapter_inspect(const std::string & path) {
         auto meta = adapter_read_metadata(st);
         if (info.trigger.empty() && meta.count("trigger")) {
             info.trigger = meta["trigger"];
+        }
+        std::string refused = adapter_unsupported(st, meta);
+        if (!refused.empty()) {
+            info.error = file + ": " + refused;
+            st_close(&st);
+            return info;
         }
         for (const auto & e : st.entries) {
             AdapterKey k;
@@ -553,7 +598,7 @@ static bool adapter_fused_parts(const GGUFModel &                              g
 // with a reason on anything that cannot merge exactly: a shape that does not
 // match the backbone, a dtype we cannot read, a factor without its pair.
 static bool adapter_collect(const std::string &                                  file,
-                            float                                                config_alpha,
+                            const AdapterConfig &                                config,
                             AdapterHalf                                          half,
                             float                                                user_scale,
                             const GGUFModel &                                    gf,
@@ -637,8 +682,8 @@ static bool adapter_collect(const std::string &                                 
             alpha = v;
         } else if (meta_alpha > 0.0f) {
             alpha = meta_alpha;
-        } else if (config_alpha > 0.0f) {
-            alpha = config_alpha;
+        } else if (config.alpha > 0.0f) {
+            alpha = config.alpha;
         }
 
         if (m.a || m.b) {
@@ -658,7 +703,8 @@ static bool adapter_collect(const std::string &                                 
             if (!read(m.a, &a) || !read(m.b, &b)) {
                 return fail("unsupported LoRA dtype on " + module);
             }
-            float   scaling = user_scale * (alpha > 0.0f ? alpha / (float) rank : 1.0f);
+            float   divisor = config.rslora ? std::sqrt((float) rank) : (float) rank;
+            float   scaling = user_scale * (alpha > 0.0f ? alpha / divisor : 1.0f);
             int64_t row0    = 0;
             for (const auto & p : parts) {
                 struct ggml_tensor * t = ggml_get_tensor(gf.meta, (p.first + ".weight").c_str());
@@ -927,14 +973,14 @@ static bool adapter_apply(WeightCtx *                      wctx,
             size_t sep = spec.path.find_last_of("/\\");
             dir        = sep == std::string::npos ? "." : spec.path.substr(0, sep);
         }
-        float config_alpha = adapter_read_config_alpha(dir);
+        AdapterConfig config = adapter_read_config(dir);
 
         // two files of one adapter touching one tensor would apply it twice
         std::map<std::string, std::vector<AdapterTerm>> own;
         for (const auto & file : files) {
             std::map<std::string, std::vector<AdapterTerm>> part;
             std::string                                     error;
-            if (!adapter_collect(file, config_alpha, half, spec.scale, gf, &part, &error)) {
+            if (!adapter_collect(file, config, half, spec.scale, gf, &part, &error)) {
                 fprintf(stderr, "[Adapter] ERROR: %s\n", error.c_str());
                 return false;
             }
