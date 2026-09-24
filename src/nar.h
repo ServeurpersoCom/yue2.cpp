@@ -163,6 +163,11 @@ static bool nar_load(Yue2NAR * n, const char * gguf_path, const std::vector<Adap
 
     if (!adapter_apply(&n->wctx, gf, ADAPTER_NAR, adapters, n->backend)) {
         gf_close(&gf);
+        // nothing but the backend, its scheduler and the weight context exist yet
+        ggml_backend_sched_free(n->sched);
+        wctx_free(&n->wctx);
+        backend_release(n->backend, n->cpu_backend);
+        *n = {};
         return false;
     }
     if (!wctx_alloc(&n->wctx, n->backend)) {

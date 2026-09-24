@@ -113,7 +113,7 @@ static void add_sampling(yyjson_mut_doc *     doc,
     }
 }
 
-static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
+static bool request_parse_obj(yyjson_val * obj, Yue2Request * r) {
     yyjson_val * v;
 
     if ((v = yyjson_obj_get(obj, "style")) && yyjson_is_str(v)) {
@@ -167,10 +167,16 @@ static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
         size_t       idx, max;
         yyjson_val * item;
         yyjson_arr_foreach(v, idx, max, item) {
-            yyjson_val *       f;
+            yyjson_val * f;
             Yue2RequestAdapter a;
-            if (!yyjson_is_obj(item) || !(f = yyjson_obj_get(item, "name")) || !yyjson_is_str(f)) {
+            if (yyjson_is_str(item) && yyjson_get_len(item) > 0) {
+                a.name = yy_str(item);
+                r->adapters.push_back(a);
                 continue;
+            }
+            if (!yyjson_is_obj(item) || !(f = yyjson_obj_get(item, "name")) || !yyjson_is_str(f) || yyjson_get_len(f) == 0) {
+                fprintf(stderr, "[Request] ERROR: an adapter needs a name\n");
+                return false;
             }
             a.name = yy_str(f);
             if ((f = yyjson_obj_get(item, "scale")) && yyjson_is_num(f)) {
@@ -193,6 +199,7 @@ static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
         }
         r->adapters.push_back(a);
     }
+    return true;
 }
 
 bool request_parse_json(Yue2Request * r, const char * json) {
@@ -208,8 +215,11 @@ bool request_parse_json(Yue2Request * r, const char * json) {
         yyjson_doc_free(doc);
         return false;
     }
-    request_parse_obj(root, r);
+    bool ok = request_parse_obj(root, r);
     yyjson_doc_free(doc);
+    if (!ok) {
+        return false;
+    }
     return true;
 }
 
@@ -226,8 +236,11 @@ bool request_parse(Yue2Request * r, const char * path) {
         yyjson_doc_free(doc);
         return false;
     }
-    request_parse_obj(root, r);
+    bool ok = request_parse_obj(root, r);
     yyjson_doc_free(doc);
+    if (!ok) {
+        return false;
+    }
     fprintf(stderr, "[Request] Parsed %s\n", path);
     return true;
 }

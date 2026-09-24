@@ -360,6 +360,11 @@ static bool qw3lm_load(Qwen3LM * m, const char * gguf_path, const std::vector<Ad
 
     if (!adapter_apply(&m->wctx, gf, ADAPTER_AR, adapters, m->backend)) {
         gf_close(&gf);
+        // nothing but the backend, its scheduler and the weight context exist yet
+        ggml_backend_sched_free(m->sched);
+        wctx_free(&m->wctx);
+        backend_release(m->backend, m->cpu_backend);
+        *m = {};
         return false;
     }
     wctx_alloc(&m->wctx, m->backend);
