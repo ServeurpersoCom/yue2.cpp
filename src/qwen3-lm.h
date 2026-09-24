@@ -11,6 +11,7 @@
 #include "static-graph.h"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -46,7 +47,7 @@ struct Qw3lmGraphCache {
     int                   key_N        = 0;
     int                   key_row0     = 0;
     int                   key_rows     = 0;
-    struct ggml_tensor *  key_kv       = nullptr;  // the cache the graph reads, reallocated on growth
+    uint64_t              key_kv       = 0;  // allocation of the cache the graph reads
     int                   key_s0       = 0;
     struct ggml_cgraph *  gf           = nullptr;
     struct ggml_tensor *  token_ids_t  = nullptr;
@@ -76,7 +77,12 @@ struct Qw3lmKvCache {
     struct ggml_tensor *  v[QW3LM_MAX_KV_SETS][QW3LM_MAX_LAYERS];
     int                   pos[QW3LM_MAX_KV_SETS];
     int                   n_sets;
+    // Allocation number, unique across caches: a freed cache can come back
+    // at the same addresses with another shape
+    uint64_t              epoch;
 };
+
+inline uint64_t g_qw3lm_kv_epoch = 0;
 
 struct Qwen3LM {
     Qwen3LMConfig cfg;
@@ -272,6 +278,7 @@ static bool qw3lm_kv_alloc(Qw3lmKvCache * kv, int n_sets) {
     // and the masked tail must read finite values, never uninitialized F16
     // bit patterns that can decode to NaN.
     ggml_backend_buffer_clear(kv->buf, 0);
+    kv->epoch = ++g_qw3lm_kv_epoch;
 
     size_t kv_bytes = (size_t) n_sets * L * 2 * D * S * Nkv * ggml_type_size(GGML_TYPE_F16);
     fprintf(stderr, "[LM-KV] Allocated %d sets x %d layers (4D batched), %.1f MB\n", n_sets, L,
@@ -279,9 +286,18 @@ static bool qw3lm_kv_alloc(Qw3lmKvCache * kv, int n_sets) {
     return true;
 }
 
+// Set the capacity of every set, dropping the sets on a change. Only safe
+// where the next user prefills from position 0.
+static void qw3lm_kv_capacity(Qw3lmKvCache * kv, int max_seq) {
+    if (kv->cfg.max_seq_len != max_seq) {
+        qw3lm_kv_free(kv);
+        kv->cfg.max_seq_len = max_seq;
+    }
+}
+
 // Grow the cache to the requested number of sets, from none on the first
 // call. The guided path and the batch ask for it before any prefill, so
-// nothing is lost here; the graphs that read the cache key on its tensors
+// nothing is lost here; the graphs that read the cache key on its allocation
 // and rebuild.
 static bool qw3lm_kv_sets(Qw3lmKvCache * kv, int n_sets) {
     if (n_sets <= kv->n_sets) {
@@ -693,7 +709,7 @@ static void qw3lm_forward_batch(Qwen3LM *      m,
     const bool need_build = !m->batch_graph.built || m->batch_graph.key_n_kv_pad != n_kv_pad ||
                             m->batch_graph.key_N != N || m->batch_graph.key_s0 != s0 ||
                             m->batch_graph.key_row0 != row0 || m->batch_graph.key_rows != rows ||
-                            m->batch_graph.key_kv != kv->k4[0];
+                            m->batch_graph.key_kv != kv->epoch;
     if (need_build) {
         static_graph_release(&m->batch_graph.graph, m->sched);
         m->batch_graph.built      = false;
@@ -859,7 +875,7 @@ static void qw3lm_forward_batch(Qwen3LM *      m,
         m->batch_graph.key_s0       = s0;
         m->batch_graph.key_row0     = row0;
         m->batch_graph.key_rows     = rows;
-        m->batch_graph.key_kv       = kv->k4[0];
+        m->batch_graph.key_kv       = kv->epoch;
         m->batch_graph.pos_data.resize((size_t) N);
         m->batch_graph.rows_data.resize((size_t) N);
         m->batch_graph.mask_data.resize((size_t) n_kv_pad * (size_t) N);
