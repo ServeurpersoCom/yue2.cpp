@@ -5,10 +5,12 @@ link_ggml_backends(test-vae)
 # test-lm: backbone AR path parity harness against the torch reference.
 add_executable(test-lm test-lm.cpp)
 link_ggml_backends(test-lm)
+target_link_libraries(test-lm PRIVATE yyjson)
 
 # test-nar: backbone NAR path parity harness against the torch reference.
 add_executable(test-nar test-nar.cpp)
 link_ggml_backends(test-nar)
+target_link_libraries(test-nar PRIVATE yyjson)
 
 # test-bpe: frozen tokenizer parity harness, pure CPU, no ggml.
 add_executable(test-bpe test-bpe.cpp)
