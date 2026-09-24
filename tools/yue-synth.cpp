@@ -46,6 +46,7 @@ static void print_usage(const char * prog) {
             "  --lm-seed <N>          Token sampling seed\n"
             "  --seed <N>             Acoustic noise seed\n"
             "  --steps <N>            Flow matching steps\n"
+            "  --adapters <dir>       Adapter directory the request adapter names resolve in\n"
             "\n"
             "Debug:\n"
             "  --score <path>         Also write the planned score\n"
@@ -67,6 +68,7 @@ int main(int argc, char ** argv) {
     }
 
     const char *       model_path  = nullptr;
+    const char *       adapters_dir = nullptr;
     const char *       vae_path    = nullptr;
     const char *       score_path  = nullptr;
     const char *       tokens_path = nullptr;
@@ -90,6 +92,8 @@ int main(int argc, char ** argv) {
             vae_path = argv[++i];
         } else if (!strcmp(argv[i], "--request") && !last) {
             i++;  // parsed before the flag pass so the flags override it
+        } else if (!strcmp(argv[i], "--adapters") && !last) {
+            adapters_dir = argv[++i];
         } else if (!strcmp(argv[i], "--out") && !last) {
             out_path = argv[++i];
         } else if (!strcmp(argv[i], "--duration") && !last) {
@@ -145,6 +149,7 @@ int main(int argc, char ** argv) {
 
     Yue2Pipeline pipeline;
     pipeline.store = store;
+    pipeline.adapters_dir = adapters_dir ? adapters_dir : "";
     if (!pipeline_configure(&pipeline, model_path, vae_path, params)) {
         store_free(store);
         return 1;

@@ -53,7 +53,12 @@ struct Yue2Pipeline {
     std::string        model_path;        // the backbone GGUF, both halves and the tokenizer
     std::string        vae_path;
     std::string        transcriber_path;  // the SheetSage2 GGUF, empty without one
+    std::string        adapters_dir;      // where request adapter names resolve, empty without one
     Yue2PipelineParams params;
+
+    // The adapters of the running request, per half, as the store keys them
+    std::vector<AdapterSpec> ar_adapters;
+    std::vector<AdapterSpec> nar_adapters;
     DebugDumper        dumper;
 
     // The cache, bound at configure to its config with the context override
@@ -152,8 +157,41 @@ static void pipeline_free(Yue2Pipeline * p) {
 // configured paths, and applies the runtime knobs after every require
 // (idempotent on cache hits). The NAR bakes them into its graph at build
 // time, the LM reads them at every forward.
+// Splits the adapters of a request into the two halves. An adapter that holds
+// nothing for a half, or has a zero scale there, stays out of that half's
+// list, so changing it never reloads the other half.
+static bool pipeline_resolve_adapters(const Yue2Pipeline *     p,
+                                      const Yue2Request &      r,
+                                      std::vector<AdapterSpec> * ar,
+                                      std::vector<AdapterSpec> * nar,
+                                      std::string *            error) {
+    ar->clear();
+    nar->clear();
+    for (const auto & a : r.adapters) {
+        std::string path;
+        if (!adapter_resolve(p->adapters_dir, a.name, &path)) {
+            *error = p->adapters_dir.empty() ? "adapters need --adapters <dir>" : "unknown adapter " + a.name;
+            return false;
+        }
+        AdapterInfo info = adapter_inspect(path);
+        if (!info.ok) {
+            *error = info.error;
+            return false;
+        }
+        float ar_scale  = a.ar_scale >= 0.0f ? a.ar_scale : a.scale;
+        float nar_scale = a.nar_scale >= 0.0f ? a.nar_scale : a.scale;
+        if (info.ar_keys > 0 && ar_scale != 0.0f) {
+            ar->push_back({ path, ar_scale });
+        }
+        if (info.nar_keys > 0 && nar_scale != 0.0f) {
+            nar->push_back({ path, nar_scale });
+        }
+    }
+    return true;
+}
+
 static Qwen3LM * require_lm(Yue2Pipeline * p) {
-    ModelKey  k = { MODEL_LM, p->model_path };
+    ModelKey  k = { MODEL_LM, p->model_path, p->ar_adapters };
     Qwen3LM * m = store_require_lm(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
@@ -163,7 +201,7 @@ static Qwen3LM * require_lm(Yue2Pipeline * p) {
 }
 
 static Yue2NAR * require_nar(Yue2Pipeline * p) {
-    ModelKey  k = { MODEL_NAR, p->model_path };
+    ModelKey  k = { MODEL_NAR, p->model_path, p->nar_adapters };
     Yue2NAR * m = store_require_nar(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
@@ -237,6 +275,11 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         return false;
     }
     if (!yue2_sampling_valid(r.abc_sampling, "abc") || !yue2_sampling_valid(r.semantic_sampling, "semantic")) {
+        return false;
+    }
+    std::string adapter_error;
+    if (!pipeline_resolve_adapters(p, r, &p->ar_adapters, &p->nar_adapters, &adapter_error)) {
+        fprintf(stderr, "[Pipeline] FATAL: %s\n", adapter_error.c_str());
         return false;
     }
 

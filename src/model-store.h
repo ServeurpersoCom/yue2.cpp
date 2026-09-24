@@ -60,6 +60,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 struct ModelStore;
 
@@ -71,8 +72,9 @@ enum ModelKind {
 };
 
 struct ModelKey {
-    ModelKind   kind;
-    std::string path;  // GGUF path the module is loaded from
+    ModelKind                kind;
+    std::string              path;      // GGUF path the module is loaded from
+    std::vector<AdapterSpec> adapters;  // LM and NAR: the adapters merged into that half
 };
 
 enum EvictPolicy {

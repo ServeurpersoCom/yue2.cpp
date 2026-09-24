@@ -134,6 +134,37 @@ one set per song of a batch; `--max-seq` and `--max-batch` are the
 levers that trade context and batch for VRAM. A 65 s song in Q8_0 peaks
 at 5.8 GB at the full context and 3.8 GB at `--max-seq 8192`.
 
+## Adapters
+
+Community LoRAs for either half load at request time. Point the server at a
+directory with `--adapters <dir>` and name its entries in the request:
+
+```json
+"adapters": [
+    { "name": "instrumental.safetensors", "scale": 1.0 },
+    { "name": "my-voice", "ar_scale": 0.5, "nar_scale": 1.0 }
+]
+```
+
+An entry is a `.safetensors` file or a directory of them (a PEFT
+`adapter_model.safetensors` with its `adapter_config.json`, or the split AR
+and NAR files a trainer exports). The AR half writes the score and the
+semantic codes, so its adapters change the composition; the NAR half paints
+the acoustics, so its adapters change the sound. `scale` applies to both,
+`ar_scale` and `nar_scale` override it per half, and a half an adapter does
+not touch is not reloaded when that adapter changes.
+
+The factors are merged into the weights while the half loads, before the
+projections are fused, every contribution to a tensor summed in one backend
+graph and encoded back to the GGUF type once. PEFT and trainer native keys,
+ComfyUI and AI Toolkit keys (`text_encoders.` for AR, `diffusion_model.` for
+NAR, fused `qkv_proj` and `gate_up_proj` split back by rows, `.diff`
+weights), GGUF style `blk.N.attn_q` keys and LoKr factors (`lokr_w1` with
+`lokr_w2`, or with `lokr_w2_a` and `lokr_w2_b`) are read;
+per tensor `.alpha`, `__metadata__` alpha and `adapter_config.json` alpha are
+honoured in that order. `GET /props` lists the directory with the halves
+each entry touches.
+
 ## Server options
 
 ```
@@ -145,6 +176,7 @@ Required:
 
 Optional:
   --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe
+  --adapters <dir>       Adapter directory, requests name its entries
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
   --max-batch <N>        Song batch limit, one KV set each (default: 1)
@@ -177,8 +209,8 @@ come out song-major.
 
 **GET /health** - Returns `{"status":"ok"}`.
 
-**GET /props** - Server version, model paths, frame rate, context, and the
-default request parameters.
+**GET /props** - Server version, model paths, frame rate, context, the
+default request parameters, and the adapters of `--adapters`.
 
 **GET /logs** - SSE stream of server stderr.
 

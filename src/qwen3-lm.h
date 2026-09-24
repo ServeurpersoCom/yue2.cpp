@@ -5,6 +5,7 @@
 // The AR half of the MoT backbone: the nar_* weight set is read by nar.h
 #pragma once
 
+#include "adapter.h"
 #include "graph-arena.h"
 #include "qwen3-enc.h"  // Qwen3Layer, Qwen3Config, layer build helpers
 #include "static-graph.h"
@@ -320,8 +321,8 @@ static bool qw3lm_read_config(const char * gguf_path, Qwen3LMConfig * cfg) {
     return true;
 }
 
-// Load model weights from GGUF
-static bool qw3lm_load(Qwen3LM * m, const char * gguf_path) {
+// Load model weights from GGUF, the adapters of the AR half merged in
+static bool qw3lm_load(Qwen3LM * m, const char * gguf_path, const std::vector<AdapterSpec> & adapters = {}) {
     *m = {};
 
     qw3lm_init_backend(m);
@@ -357,6 +358,10 @@ static bool qw3lm_load(Qwen3LM * m, const char * gguf_path) {
         qwen3_load_layer(&m->wctx, gf, &m->layers[i], prefix, i);
     }
 
+    if (!adapter_apply(&m->wctx, gf, ADAPTER_AR, adapters, m->backend)) {
+        gf_close(&gf);
+        return false;
+    }
     wctx_alloc(&m->wctx, m->backend);
     gf_close(&gf);
 
