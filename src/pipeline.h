@@ -23,6 +23,7 @@
 #include "torch-cpu-rng.h"
 #include "vae.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
@@ -53,13 +54,20 @@ struct Yue2Pipeline {
     std::string        model_path;        // the backbone GGUF, both halves and the tokenizer
     std::string        vae_path;
     std::string        transcriber_path;  // the SheetSage2 GGUF, empty without one
+    std::string        adapters_dir;      // where request adapter names resolve, empty without one
     Yue2PipelineParams params;
     DebugDumper        dumper;
 
-    // The cache, bound at configure to its config with the context override
-    // and to the shared backend, held for the process lifetime
+    // The adapters of the running request, per half, as the store keys them
+    std::vector<AdapterSpec> ar_adapters;
+    std::vector<AdapterSpec> nar_adapters;
+
+    // The cache, bound at configure to its config and to the shared backend,
+    // held for the process lifetime. Each stage sizes it to what the request
+    // needs, never past context: the model context or the max_seq override.
     Qw3lmKvCache kv;
     BackendPair  kv_backend;
+    int          context    = 0;
     bool         configured = false;
 };
 
@@ -133,6 +141,7 @@ static bool pipeline_configure(Yue2Pipeline *             p,
     if (params.max_seq > 0) {
         cfg.max_seq_len = params.max_seq;
     }
+    p->context    = cfg.max_seq_len;
     p->kv_backend = backend_init("KV");
     qw3lm_kv_init(&p->kv, cfg, p->kv_backend.backend);
     p->configured = true;
@@ -148,12 +157,45 @@ static void pipeline_free(Yue2Pipeline * p) {
     p->configured = false;
 }
 
+// Splits the adapters of a request into the two halves. An adapter that holds
+// nothing for a half, or has a zero scale there, stays out of that half's
+// list, so changing it never reloads the other half.
+static bool pipeline_resolve_adapters(const Yue2Pipeline *       p,
+                                      const Yue2Request &        r,
+                                      std::vector<AdapterSpec> * ar,
+                                      std::vector<AdapterSpec> * nar,
+                                      std::string *              error) {
+    ar->clear();
+    nar->clear();
+    for (const auto & a : r.adapters) {
+        std::string path;
+        if (!adapter_resolve(p->adapters_dir, a.name, &path)) {
+            *error = p->adapters_dir.empty() ? "adapters need --adapters <dir>" : "unknown adapter " + a.name;
+            return false;
+        }
+        AdapterInfo info = adapter_inspect(path);
+        if (!info.ok) {
+            *error = info.error;
+            return false;
+        }
+        float ar_scale  = std::isnan(a.ar_scale) ? a.scale : a.ar_scale;
+        float nar_scale = std::isnan(a.nar_scale) ? a.scale : a.nar_scale;
+        if (info.ar_keys > 0 && ar_scale != 0.0f) {
+            ar->push_back({ path, ar_scale });
+        }
+        if (info.nar_keys > 0 && nar_scale != 0.0f) {
+            nar->push_back({ path, nar_scale });
+        }
+    }
+    return true;
+}
+
 // Require helpers: one place builds the store key of each module from the
 // configured paths, and applies the runtime knobs after every require
 // (idempotent on cache hits). The NAR bakes them into its graph at build
 // time, the LM reads them at every forward.
 static Qwen3LM * require_lm(Yue2Pipeline * p) {
-    ModelKey  k = { MODEL_LM, p->model_path };
+    ModelKey  k = { MODEL_LM, p->model_path, p->ar_adapters };
     Qwen3LM * m = store_require_lm(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
@@ -163,7 +205,7 @@ static Qwen3LM * require_lm(Yue2Pipeline * p) {
 }
 
 static Yue2NAR * require_nar(Yue2Pipeline * p) {
-    ModelKey  k = { MODEL_NAR, p->model_path };
+    ModelKey  k = { MODEL_NAR, p->model_path, p->nar_adapters };
     Yue2NAR * m = store_require_nar(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
@@ -204,6 +246,14 @@ static bool pipeline_transcribe(Yue2Pipeline * p,
     return ss2_transcribe(m, audio, n_samples, melody_only, abc, error, &p->dumper);
 }
 
+// Size the cache for a stage that prefills from position 0. The capacity is
+// padded like the attention window, so every padded read spans what it did
+// over the full context and the output does not change.
+static void pipeline_kv_capacity(Yue2Pipeline * p, int need) {
+    int padded = (int) GGML_PAD(need, 256);
+    qw3lm_kv_capacity(&p->kv, padded < p->context ? padded : p->context);
+}
+
 // The cache of one generate: the stages grow it to the sets they need, a
 // replay to the one set its prefill fills. Freed on every exit under the
 // strict policy, kept under the other.
@@ -237,6 +287,11 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         return false;
     }
     if (!yue2_sampling_valid(r.abc_sampling, "abc") || !yue2_sampling_valid(r.semantic_sampling, "semantic")) {
+        return false;
+    }
+    std::string adapter_error;
+    if (!pipeline_resolve_adapters(p, r, &p->ar_adapters, &p->nar_adapters, &adapter_error)) {
+        fprintf(stderr, "[Pipeline] FATAL: %s\n", adapter_error.c_str());
         return false;
     }
 
@@ -279,6 +334,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     } else if (has_score) {
         std::vector<int>            open = yue2_build_prompt_ids(encode, cot, r.style, r.lyrics, nullptr);
         std::vector<Yue2Generation> plans;
+        pipeline_kv_capacity(p, (int) open.size() + r.abc_sampling.max_tokens + 1);
         if (!yue2_generate(lm, &p->kv, std::vector<std::vector<int>>(B, open), {}, 1.0f, r.abc_sampling, r.lm_seed,
                            YUE2_PHASE_ABC, &plans, cancelled, cancel_data)) {
             return false;
@@ -317,6 +373,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         }
         codes[0].truncated = false;
         fprintf(stderr, "[Pipeline] Replay: %zu frames supplied\n", codes[0].tokens.size());
+        pipeline_kv_capacity(p, (int) prefixes[0].size() + 2 * (int) values.size() + 3);
     } else {
         // The requested length caps the budget of the stage, never raises it
         Yue2Sampling semantic = r.semantic_sampling;
@@ -329,6 +386,19 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                 semantic.min_tokens = semantic.max_tokens;
             }
         }
+        // The sets outlive the stage: a song that fits takes its acoustic
+        // chunk whole, the prefix, its frames twice over and three markers
+        int need = 0;
+        for (int i = 0; i < B; i++) {
+            int longest = (int) prefixes[i].size();
+            if (!negatives.empty() && (int) negatives[i].size() > longest) {
+                longest = (int) negatives[i].size();
+            }
+            int semantic_need = longest + semantic.max_tokens + 1;
+            int acoustic_need = (int) prefixes[i].size() + 2 * semantic.max_tokens + 3;
+            need              = std::max(need, std::max(semantic_need, acoustic_need));
+        }
+        pipeline_kv_capacity(p, need);
         if (!yue2_generate(lm, &p->kv, prefixes, negatives, guidance, semantic, r.lm_seed, YUE2_PHASE_SEMANTIC, &codes,
                            cancelled, cancel_data)) {
             return false;

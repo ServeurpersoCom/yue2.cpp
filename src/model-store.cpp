@@ -39,13 +39,14 @@ struct ModelKeyHash {
     size_t operator()(const ModelKey & k) const noexcept {
         size_t h = std::hash<int>{}(static_cast<int>(k.kind));
         h ^= std::hash<std::string>{}(k.path) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        h ^= std::hash<std::string>{}(adapter_signature(k.adapters)) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
         return h;
     }
 };
 
 struct ModelKeyEq {
     bool operator()(const ModelKey & a, const ModelKey & b) const noexcept {
-        return a.kind == b.kind && a.path == b.path;
+        return a.kind == b.kind && a.path == b.path && adapter_signature(a.adapters) == adapter_signature(b.adapters);
     }
 };
 
@@ -88,6 +89,25 @@ struct ModelStore {
 // conflicting module still has refcount > 0: that would mean two
 // mutually exclusive modules are live at once, which violates the
 // contract in STRICT mode.
+// Under --keep-loaded a half accumulates nothing but its own adapter
+// variants would: another adapter list on the same weights replaces the
+// idle one instead of stacking a second copy of the model in VRAM.
+static void evict_adapter_variants(ModelStore * s, const ModelKey & keep) {
+    for (auto it = s->gpu.begin(); it != s->gpu.end();) {
+        ModelKeyEq eq;
+        if (it->first.kind != keep.kind || it->first.path != keep.path || eq(it->first, keep) ||
+            it->second.refcount > 0) {
+            ++it;
+            continue;
+        }
+        GpuEntry & e = it->second;
+        fprintf(stderr, "[Store] Evict %s adapter variant (%.1f MB)\n", e.label, (float) e.bytes / (1024.0f * 1024.0f));
+        s->handle_to_key.erase(e.ptr);
+        e.deleter(e.ptr);
+        it = s->gpu.erase(it);
+    }
+}
+
 static void evict_conflicts(ModelStore * s, const ModelKey & keep) {
     for (auto it = s->gpu.begin(); it != s->gpu.end();) {
         ModelKeyEq eq;
@@ -218,10 +238,12 @@ Qwen3LM * store_require_lm(ModelStore * s, const ModelKey & k) {
     }
     if (s->policy == EVICT_STRICT) {
         evict_conflicts(s, k);
+    } else {
+        evict_adapter_variants(s, k);
     }
     Timer     t;
     Qwen3LM * m = new Qwen3LM();
-    if (!qw3lm_load(m, k.path.c_str())) {
+    if (!qw3lm_load(m, k.path.c_str(), k.adapters)) {
         delete m;
         return nullptr;
     }
@@ -236,10 +258,12 @@ Yue2NAR * store_require_nar(ModelStore * s, const ModelKey & k) {
     }
     if (s->policy == EVICT_STRICT) {
         evict_conflicts(s, k);
+    } else {
+        evict_adapter_variants(s, k);
     }
     Timer     t;
     Yue2NAR * m = new Yue2NAR();
-    if (!nar_load(m, k.path.c_str())) {
+    if (!nar_load(m, k.path.c_str(), k.adapters)) {
         delete m;
         return nullptr;
     }
