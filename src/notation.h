@@ -828,7 +828,7 @@ static bool not_no_chord(const std::string & chord) {
 static bool not_normalize_key(const std::string & key, std::string * out, std::string * error) {
     size_t      colon = key.find(':');
     std::string mode  = colon == std::string::npos ? "" : key.substr(colon + 1);
-    NotRoot     root;
+    NotRoot     root{};
     if (colon == std::string::npos || !not_root(key.substr(0, colon), &root)) {
         return not_fail(error, "Invalid key " + key);
     }
@@ -852,7 +852,7 @@ static bool not_correct_chord(const std::string & chord, const std::string & key
     }
     std::string        descriptor = chord.substr(colon + 1);
     const NotQuality * quality    = not_quality(descriptor.substr(0, descriptor.find('/')));
-    NotRoot            root, tonic;
+    NotRoot            root{}, tonic{};
     if (!quality) {
         return not_fail(error, "Unsupported chord " + chord);
     }
@@ -860,7 +860,7 @@ static bool not_correct_chord(const std::string & chord, const std::string & key
         return not_fail(error, "Invalid chord " + chord + " in " + key);
     }
     bool    minor = key.substr(key.find(':') + 1) == "minor";
-    NotRoot major;
+    NotRoot major{};
     not_root(NOT_MAJOR_TONICS[((tonic.pc - (minor ? 9 : 0)) % 12 + 12) % 12], &major);
     int         key_position = not_natural_fifth(major.letter) + 7 * major.accidental;
     int         best         = -1;
@@ -892,7 +892,7 @@ static std::string not_portable_pitch(const std::string & text, const NotRoot & 
 
 // "C:maj/3" -> the bass note E, by scale degree from the root
 static bool not_bass_pitch(const std::string & root_text, const std::string & degree_text, std::string * out, std::string * error) {
-    NotRoot bass;
+    NotRoot bass{};
     if (not_root(degree_text, &bass)) {
         *out = not_portable_pitch(degree_text, bass, true);
         return true;
@@ -905,7 +905,7 @@ static bool not_bass_pitch(const std::string & root_text, const std::string & de
         degree_text.find_first_not_of("0123456789", digits) != std::string::npos) {
         return not_fail(error, "Invalid chord bass degree " + degree_text);
     }
-    NotRoot root;
+    NotRoot root{};
     not_root(root_text, &root);
     static const int scale[7] = { 0, 2, 4, 5, 7, 9, 11 };
     int interval = scale[(degree - 1) % 7] + 12 * ((degree - 1) / 7) + (sharp ? (int) accidentals.size() : 0) - (flat ? (int) accidentals.size() : 0);
@@ -934,7 +934,7 @@ static bool not_chord_abc(const std::string & chord, std::string * out, std::str
     std::string        descriptor = chord.substr(colon + 1);
     size_t             slash      = descriptor.find('/');
     const NotQuality * quality    = not_quality(descriptor.substr(0, slash));
-    NotRoot            root;
+    NotRoot            root{};
     if (!quality) {
         return not_fail(error, "Unsupported chord " + chord);
     }
@@ -977,7 +977,7 @@ static bool not_key_abc(const std::string & key, std::string * out, std::string 
         root_text = key.substr(0, key.size() - 1);
         suffix    = "m";
     }
-    NotRoot root;
+    NotRoot root{};
     if (!not_root(root_text, &root)) {
         return not_fail(error, "Invalid key " + key);
     }
