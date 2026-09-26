@@ -61,7 +61,7 @@
 					{@render actions(cancel)}
 				{:else}
 					<DialogButton onclick={cancel}>Cancel</DialogButton>
-					<DialogButton onclick={confirm}>OK</DialogButton>
+					<DialogButton onclick={confirm} primary>OK</DialogButton>
 				{/if}
 			</div>
 		</div>
@@ -72,34 +72,52 @@
 	.dialog-overlay {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
+		background: rgba(4, 5, 8, 0.66);
+		backdrop-filter: blur(6px);
+		-webkit-backdrop-filter: blur(6px);
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		z-index: 100;
+		animation: overlay-in 0.15s ease-out;
 	}
 	.dialog {
-		background: var(--bg-card);
-		border-radius: 4px;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-		padding: 0.75rem;
-		min-width: 16rem;
-		max-width: min(90vw, 28rem);
+		background: var(--bg-card-2);
+		border: 1px solid var(--border-strong);
+		border-radius: 14px;
+		box-shadow: var(--shadow);
+		padding: 1.1rem;
+		min-width: 17rem;
+		max-width: min(92vw, 28rem);
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.7rem;
+		animation: dialog-in 0.18s ease-out;
 	}
 	.dialog-title {
-		font-size: 0.85rem;
+		font-size: 0.92rem;
+		font-weight: 700;
 		color: var(--fg);
 	}
 	.dialog-body {
-		font-size: 0.8rem;
-		color: var(--fg);
+		font-size: 0.83rem;
+		line-height: 1.55;
+		color: var(--fg-dim);
 	}
 	.dialog-footer {
 		display: flex;
 		justify-content: flex-end;
-		gap: 0.4rem;
+		gap: 0.5rem;
+	}
+	@keyframes overlay-in {
+		from {
+			opacity: 0;
+		}
+	}
+	@keyframes dialog-in {
+		from {
+			opacity: 0;
+			transform: translateY(0.6rem) scale(0.98);
+		}
 	}
 </style>

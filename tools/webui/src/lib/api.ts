@@ -33,6 +33,22 @@ export function transcribeSubmit(audio: Blob, melodyOnly: boolean): Promise<stri
 	return submitJob('transcribe', { method: 'POST', body: form });
 }
 
+// POST /vocal-balance: separate a mix locally, adjust the vocal stem and
+// return a remixed WAV. The caller retains the uploaded original for A/B.
+export async function balanceVocalLevel(audio: Blob, gainDb: number | null): Promise<{ audio: Blob; gainDb: number }> {
+	const form = new FormData();
+	form.append('audio', audio, 'song.wav');
+	form.append('vocal_gain_db', gainDb == null ? 'auto' : String(gainDb));
+	const res = await fetch('vocal-balance', { method: 'POST', body: form });
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error(err.error || `${res.status} Vocal balance failed`);
+	}
+	const appliedGain = Number(res.headers.get('X-Yue2-Vocal-Gain-Db'));
+	if (!Number.isFinite(appliedGain)) throw new Error('The server did not report the applied vocal gain');
+	return { audio: await res.blob(), gainDb: appliedGain };
+}
+
 // GET /job?id=X&result=1: fetch a transcribe result, the score it heard.
 export async function jobResultTranscribe(id: string): Promise<{ abc: string }> {
 	const res = await fetch(`job?id=${encodeURIComponent(id)}&result=1`);
@@ -41,11 +57,13 @@ export async function jobResultTranscribe(id: string): Promise<{ abc: string }> 
 }
 
 // GET /job?id=X: poll job status
+export class JobTerminalError extends Error {}
 export async function jobStatus(id: string): Promise<string> {
 	const res = await fetch(`job?id=${encodeURIComponent(id)}`, {
 		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
 	});
-	if (!res.ok) throw new Error(`${res.status} Job not found`);
+	if (res.status === 404) throw new JobTerminalError('Job no longer exists on the server');
+	if (!res.ok) throw new Error(`${res.status} Job status unavailable`);
 	const data = await res.json();
 	return data.status;
 }
@@ -60,8 +78,8 @@ export async function pollJob(id: string): Promise<void> {
 		try {
 			const status = await jobStatus(id);
 			if (status === 'done') return;
-			if (status === 'failed') throw new Error('Generation failed');
-			if (status === 'cancelled') throw new Error('Cancelled');
+			if (status === 'failed') throw new JobTerminalError('Generation failed');
+			if (status === 'cancelled') throw new JobTerminalError('Cancelled');
 		} catch (e) {
 			if (e instanceof TypeError || e instanceof DOMException) {
 				// network down or timeout: retry next cycle

@@ -135,3 +135,30 @@ static std::vector<int> yue2_build_negative_ids(Tokenize bpe_encode, Yue2Cot cot
 static float yue2_default_guidance(Yue2Cot cot) {
     return cot == YUE2_COT_OFF ? 1.01f : 1.0f;
 }
+
+// Estimate song duration in seconds from lyrics text.
+// Heuristic: ~140 words/minute singing rate + 30s for intro/outro/instrumentals.
+// Returns 0 if lyrics are empty (caller should use default).
+static float yue2_estimate_duration_from_lyrics(const std::string & lyrics) {
+    if (lyrics.empty()) {
+        return 0.0f;
+    }
+    int words = 0;
+    bool in_word = false;
+    for (char c : lyrics) {
+        if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+            in_word = false;
+        } else if (!in_word) {
+            in_word = true;
+            words++;
+        }
+    }
+    if (words == 0) {
+        return 0.0f;
+    }
+    float minutes = (float) words / 140.0f;
+    float seconds = minutes * 60.0f + 30.0f;
+    if (seconds < 30.0f) seconds = 30.0f;
+    if (seconds > 600.0f) seconds = 600.0f;
+    return seconds;
+}

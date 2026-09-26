@@ -97,6 +97,35 @@ Transcribe score or Transcribe melody from the card menu: the score lands
 in the score field, pick the matching mode, add your lyrics and a style,
 and the model covers the song.
 
+## Vocal level adjustment
+
+The song decoder produces a single stereo mix. The card menu can separate
+that mix into vocals and accompaniment, estimate an automatic vocal gain, or
+set the gain manually from -6 to +6 dB, then remix the result. Auto compares
+400 ms vocal-active sections and is a starting point rather than a style-aware
+mixing standard. The original stays in the library for comparison. This uses
+the local `python-audio-separator` command and FFmpeg; separation can take time
+and may add artifacts.
+
+On Windows with an NVIDIA GPU, install the helper once from this folder:
+
+```powershell
+.\setup-vocal-separation.ps1
+```
+
+The selected BS-RoFormer model is downloaded on the first adjustment. Keep
+FFmpeg available on `PATH`; the helper's environment report shows whether its
+CUDA provider is available. You can still generate songs without this optional
+helper.
+
+## Library backup
+
+Use **Backup** above the track list to download a ZIP containing saved tracks,
+audio, optional artwork/video, and supported browser preferences. **Restore**
+checks the archive contents before showing a confirmation; accepting replaces
+the current track library. Keep backups somewhere outside the browser profile
+if you want to protect them from browser data cleanup.
+
 ## Pipeline
 
 ```

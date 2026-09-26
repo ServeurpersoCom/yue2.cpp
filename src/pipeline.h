@@ -318,12 +318,22 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         codes[0].truncated = false;
         fprintf(stderr, "[Pipeline] Replay: %zu frames supplied\n", codes[0].tokens.size());
     } else {
+        float duration = r.duration;
+        if (duration <= 0.0f) {
+            duration = yue2_estimate_duration_from_lyrics(r.lyrics);
+            if (duration > 0.0f) {
+                fprintf(stderr, "[Pipeline] Auto duration from lyrics: %.1f s\n", (double) duration);
+            } else {
+                duration = 360.0f;
+                fprintf(stderr, "[Pipeline] No lyrics, using default duration: %.1f s\n", (double) duration);
+            }
+        }
         // The requested length caps the budget of the stage, never raises it
         Yue2Sampling semantic = r.semantic_sampling;
-        int          budget   = (int) (r.duration * (float) YUE2_FRAME_RATE);
+        int          budget   = (int) (duration * (float) YUE2_FRAME_RATE);
         if (budget > 0 && budget < semantic.max_tokens) {
-            fprintf(stderr, "[AR] Frame budget clamped to %d by the requested duration (%.1f s)\n", budget,
-                    (double) r.duration);
+            fprintf(stderr, "[AR] Frame budget clamped to %d by the %s duration (%.1f s)\n", budget,
+                    r.duration <= 0.0f ? "auto" : "requested", (double) duration);
             semantic.max_tokens = budget;
             if (semantic.min_tokens > semantic.max_tokens) {
                 semantic.min_tokens = semantic.max_tokens;

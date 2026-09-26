@@ -38,7 +38,8 @@ export const FIELDS: readonly FieldDef[] = [
 	{ key: 'synth_batch_size', section: 'post', type: 'num' },
 	{ key: 'seed', section: 'post', type: 'num' },
 	{ key: 'peak_clip', section: 'post', type: 'num' },
-	{ key: 'mp3_bitrate', section: 'post', type: 'num' }
+	{ key: 'mp3_bitrate', section: 'post', type: 'num' },
+	{ key: 'mastering_profile', section: 'post', type: 'str' }
 ];
 
 // the seven knobs of a sampling preset, same order as the protocol
@@ -128,6 +129,7 @@ export function emptyRequest(): Yue2Request {
 	for (const f of FIELDS) {
 		set(r, f.key, f.type === 'str' ? '' : undefined);
 	}
+	r.mastering_profile = 'off';
 	return r;
 }
 
@@ -137,6 +139,7 @@ export function clearSection(r: Yue2Request, section: FieldSection): void {
 		if (f.section !== section) continue;
 		set(r, f.key, f.type === 'str' ? '' : undefined);
 	}
+	if (section === 'post') r.mastering_profile = 'off';
 	for (const s of SAMPLING_FIELDS) {
 		if (s.section !== section) continue;
 		set(r, s.key, {});

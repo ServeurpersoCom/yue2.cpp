@@ -33,10 +33,11 @@ function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBReque
 	return open().then(
 		(db) =>
 			new Promise((resolve, reject) => {
-				const store = db.transaction(STORE, mode).objectStore(STORE);
-				const req = fn(store);
-				req.onsuccess = () => resolve(req.result);
-				req.onerror = () => reject(req.error);
+				const transaction = db.transaction(STORE, mode);
+				const req = fn(transaction.objectStore(STORE));
+				transaction.oncomplete = () => resolve(req.result);
+				transaction.onabort = () => reject(transaction.error || new Error('Library transaction aborted'));
+				transaction.onerror = () => reject(transaction.error || req.error);
 			})
 	);
 }
@@ -46,8 +47,43 @@ export function putSong(song: Song): Promise<number> {
 	return tx('readwrite', (s) => s.put(song)) as Promise<number>;
 }
 
+// Commit the entire result together; retrying recovery must not duplicate tracks.
+export async function putJobSongs(jobId: string, songs: Song[]): Promise<void> {
+	const db = await open();
+	return new Promise((resolve, reject) => {
+		const transaction = db.transaction(STORE, 'readwrite');
+		const store = transaction.objectStore(STORE);
+		transaction.oncomplete = () => resolve();
+		transaction.onabort = () => reject(transaction.error || new Error('Could not save completed song; recovery retained'));
+		transaction.onerror = () => reject(transaction.error || new Error('Library storage failed'));
+		const existing = store.getAll();
+		existing.onsuccess = () => {
+			if (existing.result.some((song: Song) => song.sourceJob === jobId)) return;
+			for (const song of songs) store.add({ ...song, sourceJob: jobId });
+		};
+	});
+}
+
 export function getAllSongs(): Promise<Song[]> {
 	return tx('readonly', (s) => s.getAll());
+}
+
+// Replace the library in one IndexedDB transaction. Imported IDs are omitted
+// so the store assigns fresh keys without risking collisions with old records.
+export async function replaceAllSongs(songs: Song[]): Promise<void> {
+	const db = await open();
+	return new Promise((resolve, reject) => {
+		const transaction = db.transaction(STORE, 'readwrite');
+		const store = transaction.objectStore(STORE);
+		store.clear();
+		for (const song of songs) {
+			const { id: _id, peaks: _peaks, ...record } = song;
+			store.add(record);
+		}
+		transaction.oncomplete = () => resolve();
+		transaction.onabort = () => reject(transaction.error || new Error('Library restore was rolled back'));
+		transaction.onerror = () => reject(transaction.error || new Error('Library restore failed'));
+	});
 }
 
 export function deleteSong(id: number): Promise<void> {
@@ -58,6 +94,7 @@ export function deleteSong(id: number): Promise<void> {
 // so a page reload resumes polling and lands the finished song.
 
 export interface PendingJob {
+	takeGroup?: string;
 	id: string;
 	name: string;
 	request: Yue2Request;

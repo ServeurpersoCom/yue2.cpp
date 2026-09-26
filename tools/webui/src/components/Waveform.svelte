@@ -10,11 +10,13 @@
 		registerPlaying,
 		unregisterPlaying,
 		findSyncPosition,
-		playingCount
+		playingCount,
+		getPlaybackAnalyser
 	} from '../lib/audio.js';
 
 	let {
 		song,
+		audio,
 		playing = $bindable(false),
 		time = $bindable(0),
 		dur = $bindable(0),
@@ -23,6 +25,7 @@
 		rangeEnd = $bindable(0)
 	}: {
 		song: Song;
+		audio?: Blob;
 		playing: boolean;
 		time: number;
 		dur: number;
@@ -40,11 +43,12 @@
 	// Web Audio API
 	let actx: AudioContext | null = null;
 	let gain: GainNode | null = null;
-	let decoded: AudioBuffer | null = null;
+	let decoded = $state.raw<AudioBuffer | null>(null);
 	let source: AudioBufferSourceNode | null = null;
 	let playAt = 0;
 	let playOffset = 0;
 	let playingId = -1;
+	let audioReady = $state(false);
 
 	// pointer state
 	let dragging = false;
@@ -60,30 +64,14 @@
 		actx = getContext();
 		gain = actx.createGain();
 		gain.gain.value = untrack(() => app.volume);
-		gain.connect(actx.destination);
+		gain.connect(getPlaybackAnalyser());
 
-		// peaks cache hit: skip decode entirely, draw from cached array
 		if (song.peaks) {
 			peaks = song.peaks;
 			dur = song.duration;
 			draw();
 		}
-
-		song.audio
-			.arrayBuffer()
-			.then((buf) => actx!.decodeAudioData(buf))
-			.then((buf) => {
-				decoded = buf;
-				dur = buf.duration;
-				if (!song.peaks) {
-					song.peaks = computePeaks(buf, WAVEFORM_BINS);
-					song.duration = buf.duration;
-					if (song.id != null) putSong($state.snapshot(song));
-					peaks = song.peaks;
-					draw();
-				}
-			})
-			.catch(() => {});
+		audioReady = true;
 
 		canvas.addEventListener('touchstart', preventTouch, { passive: false });
 		canvas.addEventListener('touchmove', preventTouch, { passive: false });
@@ -93,6 +81,36 @@
 			cancelLoop();
 			canvas.removeEventListener('touchstart', preventTouch);
 			canvas.removeEventListener('touchmove', preventTouch);
+		};
+	});
+
+	$effect(() => {
+		const selectedAudio = audio ?? song.audio;
+		if (!audioReady || !actx) return;
+		let cancelled = false;
+		const isMasteredAudio = selectedAudio === song.audio;
+		decoded = null;
+		peaks = isMasteredAudio && song.peaks ? song.peaks : new Float32Array();
+		if (isMasteredAudio && song.peaks) dur = song.duration;
+		selectedAudio
+			.arrayBuffer()
+			.then((buf) => actx!.decodeAudioData(buf))
+			.then((buf) => {
+				if (cancelled) return;
+				decoded = buf;
+				dur = buf.duration;
+				if (isMasteredAudio && !song.peaks) {
+					song.peaks = computePeaks(buf, WAVEFORM_BINS);
+					song.duration = buf.duration;
+					if (song.id != null) putSong($state.snapshot(song));
+				}
+				peaks = isMasteredAudio ? (song.peaks ?? computePeaks(buf, WAVEFORM_BINS)) : computePeaks(buf, WAVEFORM_BINS);
+				draw();
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+			stopPlayback();
 		};
 	});
 
