@@ -79,6 +79,7 @@ struct NotScore {
     std::vector<int>                         subbeat_den;
     std::vector<std::string>                 key_arr;    // ABC key name per subbeat
     std::vector<std::string>                 chord_arr;  // chord label per subbeat, "N" for none
+    std::map<std::string, std::string>       chord_text; // chord label -> ABC text, "" for no chord
     std::vector<std::pair<int, std::string>> structure_events;
     std::vector<int>                         voice[2];   // 0 rest, pitch * 2 + 2 sustain, + 1 onset
     const NotTables *                        tables;
@@ -559,8 +560,8 @@ static bool not_render_measure(const NotScore &   s,
             prefix += "[K:" + current_key + "]";
         }
         if (show_chords && (t == not_start_t(m) || s.chord_arr[(size_t) t] != s.chord_arr[(size_t) t - 1])) {
-            auto chord = s.tables->chord_abc.find(s.chord_arr[(size_t) t]);
-            if (chord != s.tables->chord_abc.end() && !chord->second.empty()) {
+            auto chord = s.chord_text.find(s.chord_arr[(size_t) t]);
+            if (chord != s.chord_text.end() && !chord->second.empty()) {
                 prefix += "\"" + chord->second + "\"";
             }
         }
@@ -723,6 +724,278 @@ static bool not_score_to_abc(const NotScore & s, std::string * abc, std::string 
     return true;
 }
 
+// Key and chord spelling, after SheetSage2's chord_spelling_sheetsage2.py
+// (revision 55bfe14) as ComfyUI ports it (66b68a3): a key is named by its
+// canonical tonic, every chord root is spelled for the key it sounds in, and
+// both are written to ABC from the corrected names. The tokenizer's fixed
+// label -> ABC tables spelled a chord the same in every key, so a cover could
+// be scored with enharmonics that do not belong to its key.
+
+static const char * NOT_SHARP_NAMES[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+static const char * NOT_FLAT_NAMES[12]  = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
+static const char * NOT_MAJOR_TONICS[12] = { "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+static const char * NOT_MINOR_TONICS[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "Bb", "B" };
+
+static int not_natural_pc(char letter) {
+    switch (letter) {
+        case 'C': return 0;
+        case 'D': return 2;
+        case 'E': return 4;
+        case 'F': return 5;
+        case 'G': return 7;
+        case 'A': return 9;
+        default: return 11;
+    }
+}
+
+static int not_natural_fifth(char letter) {
+    switch (letter) {
+        case 'F': return 0;
+        case 'C': return 1;
+        case 'G': return 2;
+        case 'D': return 3;
+        case 'A': return 4;
+        case 'E': return 5;
+        default: return 6;
+    }
+}
+
+struct NotRoot {
+    int  pc;
+    char letter;
+    int  accidental;  // +2 .. -2
+};
+
+// A letter A-G and at most two sharps or two flats
+static bool not_root(const std::string & text, NotRoot * out) {
+    if (text.empty() || text[0] < 'A' || text[0] > 'G') {
+        return false;
+    }
+    std::string rest = text.substr(1);
+    int         acc  = 0;
+    if (rest == "#" || rest == "##") {
+        acc = (int) rest.size();
+    } else if (rest == "b" || rest == "bb") {
+        acc = -(int) rest.size();
+    } else if (!rest.empty()) {
+        return false;
+    }
+    *out = { ((not_natural_pc(text[0]) + acc) % 12 + 12) % 12, text[0], acc };
+    return true;
+}
+
+static std::string not_spell(char letter, int accidental) {
+    return std::string(1, letter) + (accidental >= 0 ? std::string((size_t) accidental, '#') : std::string((size_t) -accidental, 'b'));
+}
+
+static const struct NotQuality {
+    const char * name;
+    const char * abc;
+    int          count;
+    int          fifths[4];
+} NOT_QUALITIES[] = {
+    { "maj",      "",       3, { 0, 4, 1, 0 }    },
+    { "min",      "m",      3, { 0, -3, 1, 0 }   },
+    { "dim",      "dim",    3, { 0, -3, -6, 0 }  },
+    { "aug",      "aug",    3, { 0, 4, 8, 0 }    },
+    { "maj7",     "maj7",   4, { 0, 4, 1, 5 }    },
+    { "min7",     "m7",     4, { 0, -3, 1, -2 }  },
+    { "7",        "7",      4, { 0, 4, 1, -2 }   },
+    { "hdim7",    "m7b5",   4, { 0, -3, -6, -2 } },
+    { "dim7",     "dim7",   4, { 0, -3, -6, -9 } },
+    { "minmaj7",  "m(maj7)", 4, { 0, -3, 1, 5 }  },
+    { "sus2",     "sus2",   3, { 0, 2, 1, 0 }    },
+    { "sus4",     "sus4",   3, { 0, -1, 1, 0 }   },
+    { "sus4(b7)", "7sus4",  4, { 0, -1, 1, -2 }  },
+    { "maj6",     "6",      4, { 0, 4, 1, 3 }    },
+    { "min6",     "m6",     4, { 0, -3, 1, 3 }   },
+};
+
+static const NotQuality * not_quality(const std::string & name) {
+    for (const NotQuality & q : NOT_QUALITIES) {
+        if (name == q.name) {
+            return &q;
+        }
+    }
+    return nullptr;
+}
+
+static bool not_no_chord(const std::string & chord) {
+    return chord == "N" || chord == "X" || chord == "?";
+}
+
+// "C#:major" -> "Db:major": the tonic the decoder's vocabulary names the key by
+static bool not_normalize_key(const std::string & key, std::string * out, std::string * error) {
+    size_t      colon = key.find(':');
+    std::string mode  = colon == std::string::npos ? "" : key.substr(colon + 1);
+    NotRoot     root;
+    if (colon == std::string::npos || !not_root(key.substr(0, colon), &root)) {
+        return not_fail(error, "Invalid key " + key);
+    }
+    if (mode != "major" && mode != "minor") {
+        return not_fail(error, "Unsupported key mode " + mode + " in " + key);
+    }
+    *out = std::string(mode == "major" ? NOT_MAJOR_TONICS[root.pc] : NOT_MINOR_TONICS[root.pc]) + ":" + mode;
+    return true;
+}
+
+// The root spelled nearest the key on the circle of fifths, over all of the
+// chord's tones, the root counted twice; ties go to the first letter of CDEFGAB
+static bool not_correct_chord(const std::string & chord, const std::string & key, std::string * out, std::string * error) {
+    if (not_no_chord(chord)) {
+        *out = chord;
+        return true;
+    }
+    size_t colon = chord.find(':');
+    if (colon == std::string::npos) {
+        return not_fail(error, "Chord " + chord + " is missing the ':' quality separator");
+    }
+    std::string        descriptor = chord.substr(colon + 1);
+    const NotQuality * quality    = not_quality(descriptor.substr(0, descriptor.find('/')));
+    NotRoot            root, tonic;
+    if (!quality) {
+        return not_fail(error, "Unsupported chord " + chord);
+    }
+    if (!not_root(chord.substr(0, colon), &root) || !not_root(key.substr(0, key.find(':')), &tonic)) {
+        return not_fail(error, "Invalid chord " + chord + " in " + key);
+    }
+    bool    minor = key.substr(key.find(':') + 1) == "minor";
+    NotRoot major;
+    not_root(NOT_MAJOR_TONICS[((tonic.pc - (minor ? 9 : 0)) % 12 + 12) % 12], &major);
+    int         key_position = not_natural_fifth(major.letter) + 7 * major.accidental;
+    int         best         = -1;
+    std::string spelling;
+    for (const char * letter = NOT_LETTERS; *letter; letter++) {
+        int accidental = ((root.pc - not_natural_pc(*letter) + 6) % 12 + 12) % 12 - 6;
+        int position   = not_natural_fifth(*letter) + accidental * 7;
+        int score      = 0;
+        for (int i = 0; i < quality->count; i++) {
+            int distance = std::max(abs(position + quality->fifths[i] - (key_position + 2)) - 3, 0);
+            score += i == 0 ? 2 * distance : distance;
+        }
+        if (best < 0 || score < best) {
+            best     = score;
+            spelling = not_spell(*letter, accidental);
+        }
+    }
+    *out = spelling + ":" + descriptor;
+    return true;
+}
+
+// A double sharp or flat is written as the plain pitch unless asked to keep it
+static std::string not_portable_pitch(const std::string & text, const NotRoot & root, bool preserve_double) {
+    if (preserve_double || abs(root.accidental) <= 1) {
+        return text;
+    }
+    return root.accidental > 0 ? NOT_SHARP_NAMES[root.pc] : NOT_FLAT_NAMES[root.pc];
+}
+
+// "C:maj/3" -> the bass note E, by scale degree from the root
+static bool not_bass_pitch(const std::string & root_text, const std::string & degree_text, std::string * out, std::string * error) {
+    NotRoot bass;
+    if (not_root(degree_text, &bass)) {
+        *out = not_portable_pitch(degree_text, bass, true);
+        return true;
+    }
+    size_t digits = degree_text.find_first_of("0123456789");
+    std::string accidentals = digits == std::string::npos ? "" : degree_text.substr(0, digits);
+    int         degree      = digits == std::string::npos ? 0 : atoi(degree_text.c_str() + digits);
+    bool        sharp = accidentals == "#" || accidentals == "##", flat = accidentals == "b" || accidentals == "bb";
+    if (digits == std::string::npos || degree < 1 || degree > 13 || !(accidentals.empty() || sharp || flat) ||
+        degree_text.find_first_not_of("0123456789", digits) != std::string::npos) {
+        return not_fail(error, "Invalid chord bass degree " + degree_text);
+    }
+    NotRoot root;
+    not_root(root_text, &root);
+    static const int scale[7] = { 0, 2, 4, 5, 7, 9, 11 };
+    int interval = scale[(degree - 1) % 7] + 12 * ((degree - 1) / 7) + (sharp ? (int) accidentals.size() : 0) - (flat ? (int) accidentals.size() : 0);
+    int target_pc = (root.pc + interval) % 12;
+    char target_letter = NOT_LETTERS[(strchr(NOT_LETTERS, root.letter) - NOT_LETTERS + degree - 1) % 7];
+    int  difference    = ((target_pc - not_natural_pc(target_letter) + 6) % 12 + 12) % 12 - 6;
+    if (difference >= -2 && difference <= 2) {
+        *out = not_spell(target_letter, difference);
+    } else {
+        *out = (root.accidental > 0 || sharp) ? NOT_SHARP_NAMES[target_pc] : NOT_FLAT_NAMES[target_pc];
+    }
+    return true;
+}
+
+// "Db:min7/b3" -> "Dbm7/Fb"; "" for no chord
+static bool not_chord_abc(const std::string & chord, std::string * out, std::string * error) {
+    if (not_no_chord(chord)) {
+        out->clear();
+        return true;
+    }
+    size_t colon = chord.find(':');
+    if (colon == std::string::npos) {
+        return not_fail(error, "Chord " + chord + " is missing the ':' quality separator");
+    }
+    std::string        root_text  = chord.substr(0, colon);
+    std::string        descriptor = chord.substr(colon + 1);
+    size_t             slash      = descriptor.find('/');
+    const NotQuality * quality    = not_quality(descriptor.substr(0, slash));
+    NotRoot            root;
+    if (!quality) {
+        return not_fail(error, "Unsupported chord " + chord);
+    }
+    if (!not_root(root_text, &root)) {
+        return not_fail(error, "Invalid chord " + chord);
+    }
+    *out = not_portable_pitch(root_text, root, true) + quality->abc;
+    if (slash != std::string::npos) {
+        std::string bass;
+        if (!not_bass_pitch(root_text, descriptor.substr(slash + 1), &bass, error)) {
+            return false;
+        }
+        *out += "/" + bass;
+    }
+    return true;
+}
+
+static bool not_key_signature(const std::string & name) {
+    static const char * names[] = { "C", "G", "D", "A", "E", "B", "F#", "C#", "F", "Bb", "Eb", "Ab", "Db", "Gb", "Cb",
+                                    "Am", "Em", "Bm", "F#m", "C#m", "G#m", "D#m", "A#m", "Dm", "Gm", "Cm", "Fm", "Bbm", "Ebm", "Abm" };
+    for (const char * n : names) {
+        if (name == n) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// "Db:major" -> "Db", "C#:minor" -> "C#m": a key signature ABC has
+static bool not_key_abc(const std::string & key, std::string * out, std::string * error) {
+    size_t      colon = key.find(':');
+    std::string root_text = key.substr(0, colon), suffix;
+    if (colon != std::string::npos) {
+        std::string mode = key.substr(colon + 1);
+        if (mode != "major" && mode != "minor") {
+            return not_fail(error, "Unsupported key mode " + mode + " in " + key);
+        }
+        suffix = mode == "minor" ? "m" : "";
+    } else if (!key.empty() && key.back() == 'm') {
+        root_text = key.substr(0, key.size() - 1);
+        suffix    = "m";
+    }
+    NotRoot root;
+    if (!not_root(root_text, &root)) {
+        return not_fail(error, "Invalid key " + key);
+    }
+    std::string candidate = not_portable_pitch(root_text, root, false) + suffix;
+    if (!not_key_signature(candidate)) {
+        bool flats = root.accidental < 0;
+        candidate  = std::string(flats ? NOT_FLAT_NAMES[root.pc] : NOT_SHARP_NAMES[root.pc]) + suffix;
+        if (!not_key_signature(candidate)) {
+            candidate = std::string(flats ? NOT_SHARP_NAMES[root.pc] : NOT_FLAT_NAMES[root.pc]) + suffix;
+        }
+    }
+    if (!not_key_signature(candidate)) {
+        return not_fail(error, "Cannot encode portable ABC key for " + key);
+    }
+    *out = candidate;
+    return true;
+}
+
 // The whole export: events of a song -> ABC text, or the reason there is none
 static bool notation_abc(const std::vector<NotEvent> & events,
                          double                        duration,
@@ -797,10 +1070,33 @@ static bool notation_abc(const std::vector<NotEvent> & events,
         beats.push_back({ prev.time + period, prev.beat_id % prev.num + 1, prev.num, prev.den });
     }
 
-    // Intervals clipped to the beat domain, the key in ABC spelling
+    // Keys by their canonical tonic, chords spelled for the key at their
+    // midpoint (a tie on a boundary takes the key on the left), then clipped
+    // to the beat domain, the key in ABC spelling
+    std::vector<NotInterval> raw[3];
+    for (int f = 0; f < 3; f++) {
+        raw[f] = not_intervals(events, f, duration);
+    }
+    for (NotInterval & r : raw[1]) {
+        if (!not_normalize_key(r.label, &r.label, error)) {
+            return false;
+        }
+    }
+    if (!raw[1].empty()) {
+        for (NotInterval & r : raw[0]) {
+            double mid = 0.5 * (r.start + r.end);
+            size_t k   = 0;
+            while (k + 1 < raw[1].size() && raw[1][k].end < mid) {
+                k++;
+            }
+            if (!not_correct_chord(r.label, raw[1][k].label, &r.label, error)) {
+                return false;
+            }
+        }
+    }
     std::vector<NotInterval> fields[3];
     for (int f = 0; f < 3; f++) {
-        for (NotInterval r : not_intervals(events, f, duration)) {
+        for (NotInterval r : raw[f]) {
             if (r.end > beats.front().time && r.start < beats.back().time) {
                 r.start = std::max(beats.front().time, r.start);
                 r.end   = std::min(beats.back().time, r.end);
@@ -815,16 +1111,17 @@ static bool notation_abc(const std::vector<NotEvent> & events,
         return not_fail(error, "at least one key interval is required");
     }
     for (NotInterval & r : fields[1]) {
-        auto it = tables.key_abc.find(r.label);
-        if (it == tables.key_abc.end()) {
-            return not_fail(error, "Unsupported key " + r.label);
+        if (!not_key_abc(r.label, &r.label, error)) {
+            return false;
         }
-        r.label = it->second;
     }
+    std::map<std::string, std::string> chord_text;
     for (const NotInterval & r : fields[0]) {
-        if (tables.chord_abc.find(r.label) == tables.chord_abc.end()) {
-            return not_fail(error, "Unsupported chord " + r.label);
+        std::string text;
+        if (!not_chord_abc(r.label, &text, error)) {
+            return false;
         }
+        chord_text[r.label] = text;
     }
 
     // The monophonic notation view: per track, sorted by onset then pitch,
@@ -855,7 +1152,8 @@ static bool notation_abc(const std::vector<NotEvent> & events,
     });
 
     NotScore s;
-    s.tables = &tables;
+    s.tables     = &tables;
+    s.chord_text = chord_text;
     s.beats  = beats;
     if (!not_measures(s.beats, &s.measures, error) || !not_grid(&s, error)) {
         return false;
