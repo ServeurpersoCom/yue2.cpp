@@ -30,6 +30,7 @@ export interface Yue2Request {
 	output_format?: string;
 	peak_clip?: number;
 	mp3_bitrate?: number;
+	mastering_profile?: string;
 }
 
 // GET /props response
@@ -45,6 +46,8 @@ export interface Yue2Props {
 
 // what we store in IndexedDB per song
 export interface Song {
+	takeGroup?: string;
+	sourceJob?: string;
 	id?: number;
 	name: string;
 	format: string;
@@ -57,6 +60,16 @@ export interface Song {
 	score: string;
 	request: Yue2Request;
 	audio: Blob;
+	originalAudio?: Blob;
+	// Mix before the last vocal-balance operation, retained for A/B playback.
+	vocalOriginalAudio?: Blob;
+	// Optional decoded-audio artwork. Stored as a Blob, never a temporary URL.
+	artwork?: Blob;
+	albumId?: string;
+	albumTitle?: string;
+	albumTrackId?: string;
+	trackNumber?: number;
+	video?: Blob;
 	// user-marked favorite, persisted across reloads. Acts as a sticky
 	// flag for the bulk "Delete non-favorites" action.
 	favorite?: boolean;

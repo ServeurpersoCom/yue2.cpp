@@ -10,20 +10,26 @@
 // live in src/.
 
 #include "audio-io.h"
+#include "audio-master.h"
+#include "audio-vocal-balance.h"
 #include "httplib.h"
 #include "index.html.gz.hpp"
 #include "pipeline.h"
 #include "version.h"
 #include "yyjson.h"
+#include "comfy-api.h"
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cmath>
+#include <exception>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -213,6 +219,13 @@ static std::string job_make_id() {
 
 static std::shared_ptr<Job> job_create() {
     std::lock_guard<std::mutex> lock(mtx_jobs);
+    int pending = 0;
+    for (const auto & entry : g_jobs) {
+        if (entry.second->status.load() == JobStatus::RUNNING) ++pending;
+    }
+    // Includes the executing job. Admission is checked under the same lock
+    // as insertion, so concurrent HTTP requests cannot oversubscribe it.
+    if (pending >= 4) return nullptr;
     auto                        job = std::make_shared<Job>();
     job->id                         = job_make_id();
     g_jobs[job->id]                 = job;
@@ -389,10 +402,29 @@ static std::mutex                        mtx_work;
 static std::condition_variable           cv_work;
 static bool                              g_work_stop = false;
 
-static void work_push(std::function<void()> fn) {
+static void work_push(std::shared_ptr<Job> job, std::function<void()> fn) {
     {
         std::lock_guard<std::mutex> lock(mtx_work);
-        g_work_queue.push_back(std::move(fn));
+        if (g_work_stop) {
+            job->status.store(JobStatus::CANCELLED);
+            return;
+        }
+        g_work_queue.push_back([job, fn = std::move(fn)] {
+            if (job->cancel.load()) {
+                job->status.store(JobStatus::CANCELLED);
+                return;
+            }
+            try {
+                fn();
+            } catch (const std::exception & error) {
+                fprintf(stderr, "[Server] Job %s failed: %s\n", job->id.c_str(), error.what());
+                job->status.store(JobStatus::FAILED);
+            } catch (...) {
+                fprintf(stderr, "[Server] Job %s failed: unknown exception\n", job->id.c_str());
+                job->status.store(JobStatus::FAILED);
+            }
+            active_job_set(nullptr);
+        });
     }
     cv_work.notify_one();
 }
@@ -474,6 +506,11 @@ static void handle_props(const httplib::Request &, httplib::Response & res) {
 // Validates what the pipeline would refuse anyway, so a bad request fails
 // fast with a 400 instead of occupying the worker
 static bool validate(const httplib::Request & req, httplib::Response & res, Yue2Request * r) {
+    if (req.body.size() > 1024 * 1024) {
+        res.status = 413;
+        res.set_content(json_string("error", "generation request exceeds 1 MiB"), "application/json");
+        return false;
+    }
     if (!request_parse_json(r, req.body.c_str())) {
         res.status = 400;
         res.set_content(json_string("error", "invalid JSON"), "application/json");
@@ -492,9 +529,31 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
         res.set_content(json_string("error", "unknown output format"), "application/json");
         return false;
     }
-    if (r->steps < 1) {
+    if (r->mastering_profile != "off" && r->mastering_profile != "streaming" &&
+        r->mastering_profile != "broadcast") {
         res.status = 400;
-        res.set_content(json_string("error", "steps must be positive"), "application/json");
+        res.set_content(json_string("error", "mastering_profile must be off, streaming or broadcast"), "application/json");
+        return false;
+    }
+    if (r->steps < 1 || r->steps > 200) {
+        res.status = 400;
+        res.set_content(json_string("error", "steps must be between 1 and 200"), "application/json");
+        return false;
+    }
+    if (!std::isfinite(r->duration) || r->duration < 0 || r->duration > 600 ||
+        !std::isfinite(r->cfg_scale) || r->cfg_scale < -1 || r->cfg_scale > 30 ||
+        r->peak_clip < 0 || r->peak_clip > 999) {
+        res.status = 400;
+        res.set_content(json_string("error", "duration must be 0 (auto) to 600 seconds, CFG -1 to 30, peak clip 0 to 999"), "application/json");
+        return false;
+    }
+    if (is_mp3 && r->mp3_bitrate != 32 && r->mp3_bitrate != 40 && r->mp3_bitrate != 48 &&
+        r->mp3_bitrate != 56 && r->mp3_bitrate != 64 && r->mp3_bitrate != 80 &&
+        r->mp3_bitrate != 96 && r->mp3_bitrate != 112 && r->mp3_bitrate != 128 &&
+        r->mp3_bitrate != 160 && r->mp3_bitrate != 192 && r->mp3_bitrate != 224 &&
+        r->mp3_bitrate != 256 && r->mp3_bitrate != 320) {
+        res.status = 400;
+        res.set_content(json_string("error", "unsupported MP3 bitrate; recommended: 320 kbps"), "application/json");
         return false;
     }
     if (r->lm_batch_size < 1 || r->lm_batch_size > g_pipeline.params.max_batch) {
@@ -560,8 +619,35 @@ static void run_job(std::shared_ptr<Job> job, Yue2Request request) {
     std::vector<std::string> request_parts;
     for (size_t t = 0; t < songs.size(); t++) {
         Yue2Song & song = songs[t];
-        // Normalization belongs to the output stage, WAV32 keeping the full range
-        if (is_mp3 || wav_fmt != WAV_F32) {
+        if (request.mastering_profile != "off") {
+            std::vector<float> mastered;
+            std::string error;
+            if (!audio_master_ffmpeg(song.audio.data(), song.T_audio, YUE2_SAMPLE_RATE,
+                                     request.mastering_profile, &mastered, &error)) {
+                fprintf(stderr, "[Master] Job %s failed: %s\n", job->id.c_str(), error.c_str());
+                active_job_set(nullptr);
+                job->status.store(JobStatus::FAILED);
+                return;
+            }
+            // Keep the original take beside its master for in-app A/B preview.
+            if (is_mp3 || wav_fmt != WAV_F32) {
+                audio_normalize(song.audio.data(), song.T_audio * 2, request.peak_clip);
+            }
+            audio_parts.push_back(
+                is_mp3 ? audio_encode_mp3(song.audio.data(), song.T_audio, YUE2_SAMPLE_RATE, request.mp3_bitrate) :
+                         audio_encode_wav(song.audio.data(), song.T_audio, YUE2_SAMPLE_RATE, wav_fmt));
+            if (audio_parts.back().empty()) {
+                active_job_set(nullptr);
+                job->status.store(JobStatus::FAILED);
+                return;
+            }
+            Yue2Request original = request_replay(request, song.score.empty() ? request.abc : song.score,
+                                                  pipeline_format_tokens(song.tokens), (int) t / M, (int) t % M);
+            original.mastering_profile = "off";
+            request_parts.push_back(request_to_json(&original));
+            song.audio.swap(mastered);
+        // Normalization belongs to the output stage; WAV32 keeps the full range.
+        } else if (is_mp3 || wav_fmt != WAV_F32) {
             audio_normalize(song.audio.data(), song.T_audio * 2, request.peak_clip);
         }
         audio_parts.push_back(
@@ -594,7 +680,7 @@ static void print_usage(const char * prog) {
             "\n"
             "Optional:\n"
             "  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe\n"
-            "  --host <addr>          Listen address (default: 0.0.0.0)\n"
+            "  --host <addr>          Listen address (default: 127.0.0.1)\n"
             "  --port <N>             Listen port (default: 8087)\n"
             "  --max-batch <N>        Song batch limit, one KV set each (default: 1)\n"
             "  --keep-loaded          Keep every model resident in VRAM (default: evict between stages)\n"
@@ -614,8 +700,9 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    const char *       host = "0.0.0.0";
+    const char *       host = "127.0.0.1";
     int                port = 8087;
+    int                comfy_port = 8188;
     Yue2PipelineParams params;
 
     for (int i = 1; i < argc; i++) {
@@ -626,6 +713,9 @@ int main(int argc, char ** argv) {
             g_vae_path = argv[++i];
         } else if (!strcmp(argv[i], "--transcriber") && !last) {
             g_transcriber_path = argv[++i];
+        } else if (!strcmp(argv[i], "--comfy-port") && !last) {
+            comfy_port = atoi(argv[++i]);
+            if (comfy_port < 1 || comfy_port > 65535) return 1;
         } else if (!strcmp(argv[i], "--host") && !last) {
             host = argv[++i];
         } else if (!strcmp(argv[i], "--port") && !last) {
@@ -658,6 +748,29 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
+    auto readable_model_file = [](const std::string & path) {
+        std::error_code ec;
+        return std::filesystem::is_regular_file(std::filesystem::path(path), ec) && !ec;
+    };
+    if (!readable_model_file(g_model_path)) {
+        fprintf(stderr, "[Startup] Required backbone model not found or not a file: %s\n"
+                        "[Startup] Check the --model path or put the GGUF in models\\ and launch music again.\n",
+                g_model_path.c_str());
+        return 1;
+    }
+    if (!readable_model_file(g_vae_path)) {
+        fprintf(stderr, "[Startup] Required VAE model not found or not a file: %s\n"
+                        "[Startup] Check the --vae path or put the GGUF in models\\ and launch music again.\n",
+                g_vae_path.c_str());
+        return 1;
+    }
+    if (!g_transcriber_path.empty() && !readable_model_file(g_transcriber_path)) {
+        fprintf(stderr, "[Startup] Optional transcriber model not found: %s\n"
+                        "[Startup] Music generation will work, but audio transcription is disabled.\n",
+                g_transcriber_path.c_str());
+        g_transcriber_path.clear();
+    }
+
     LogCapture log_capture;
 
     // Model loads go through the store: STRICT by default (one half of the
@@ -673,6 +786,7 @@ int main(int argc, char ** argv) {
     std::thread worker(worker_main);
 
     httplib::Server svr;
+    register_comfy_api(svr, comfy_port);
     g_svr = &svr;
 
     // SO_REUSEADDR lets us rebind a port still in TIME_WAIT after a restart.
@@ -705,7 +819,12 @@ int main(int argc, char ** argv) {
             return;
         }
         auto job = job_create();
-        work_push([job, request] { run_job(job, request); });
+        if (!job) {
+            res.status = 429;
+            res.set_content(json_string("error", "generation queue full; wait for a job to finish"), "application/json");
+            return;
+        }
+        work_push(job, [job, request] { run_job(job, request); });
         res.set_content(json_string("id", job->id), "application/json");
     });
 
@@ -730,10 +849,65 @@ int main(int argc, char ** argv) {
                 return;
             }
             auto job = job_create();
-            work_push([job, audio, melody_only] { run_transcribe(job, audio, melody_only); });
+            if (!job) {
+                res.status = 429;
+                res.set_content(json_string("error", "generation queue full; wait for a job to finish"), "application/json");
+                return;
+            }
+            work_push(job, [job, audio = std::move(audio), melody_only] { run_transcribe(job, audio, melody_only); });
             res.set_content(json_string("id", job->id), "application/json");
         });
     }
+
+    // POST /vocal-balance, multipart/form-data: an audio file and a vocal
+    // gain in dB. The original upload is never modified.
+    svr.Post("/vocal-balance", [](const httplib::Request & req, httplib::Response & res) {
+        if (!req.is_multipart_form_data() || !req.form.has_file("audio") || !req.form.has_field("vocal_gain_db")) {
+            res.status = 400;
+            res.set_content(json_string("error", "multipart audio and vocal_gain_db fields required"), "application/json");
+            return;
+        }
+        const std::string & file = req.form.get_file("audio").content;
+        int samples = 0, sample_rate = 0;
+        float * audio = audio_read_buf((const uint8_t *) file.data(), file.size(), &samples, &sample_rate);
+        if (!audio || samples <= 0 || sample_rate <= 0) {
+            free(audio);
+            res.status = 400;
+            res.set_content(json_string("error", "cannot decode audio"), "application/json");
+            return;
+        }
+        const std::string gain_text = req.form.get_field("vocal_gain_db");
+        char * end = nullptr;
+        const float gain = strtof(gain_text.c_str(), &end);
+        const bool auto_gain = gain_text == "auto";
+        if (!auto_gain && (end == gain_text.c_str() || *end != '\0' || !std::isfinite(gain) || gain < -12.0f || gain > 12.0f)) {
+            free(audio);
+            res.status = 400;
+            res.set_content(json_string("error", "vocal_gain_db must be between -12 and +12"), "application/json");
+            return;
+        }
+        std::vector<float> balanced;
+        std::string error;
+        float applied_gain = 0.0f;
+        const bool ok = audio_vocal_balance_ffmpeg(audio, samples, sample_rate, gain, auto_gain,
+                                                   &balanced, &applied_gain, &error);
+        free(audio);
+        if (!ok) {
+            res.status = 503;
+            res.set_content(json_string("error", error), "application/json");
+            return;
+        }
+        const std::string wav = audio_encode_wav_f32(balanced.data(), samples, sample_rate);
+        if (wav.empty()) {
+            res.status = 500;
+            res.set_content(json_string("error", "could not encode balanced audio"), "application/json");
+            return;
+        }
+        char applied_gain_text[32];
+        snprintf(applied_gain_text, sizeof(applied_gain_text), "%.1f", (double) applied_gain);
+        res.set_header("X-Yue2-Vocal-Gain-Db", applied_gain_text);
+        res.set_content(wav, "audio/wav");
+    });
 
     svr.Get("/job", [](const httplib::Request & req, httplib::Response & res) {
         auto job = job_find(req.get_param_value("id"));
@@ -792,6 +966,10 @@ int main(int argc, char ** argv) {
     {
         std::lock_guard<std::mutex> lock(mtx_work);
         g_work_stop = true;
+    }
+    {
+        std::lock_guard<std::mutex> lock(mtx_jobs);
+        for (const auto & entry : g_jobs) entry.second->cancel.store(true);
     }
     cv_work.notify_all();
     worker.join();

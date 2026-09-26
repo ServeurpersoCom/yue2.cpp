@@ -63,7 +63,7 @@ int main(int argc, char ** argv) {
 
     const char * input   = NULL;
     const char * output  = NULL;
-    int          bitrate = 128;
+    int          bitrate = 320;
     WavFormat    wav_fmt = WAV_S16;
 
     for (int i = 1; i < argc; i++) {

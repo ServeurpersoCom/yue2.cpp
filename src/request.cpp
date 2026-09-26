@@ -35,7 +35,8 @@ void request_init(Yue2Request * r) {
     r->semantic_sampling = YUE2_SEMANTIC_SAMPLING;
 
     r->output_format = OUTPUT_FORMAT_MP3;
-    r->mp3_bitrate   = 128;
+    r->mp3_bitrate   = 320;
+    r->mastering_profile = "off";
 }
 
 static inline std::string yy_str(yyjson_val * v) {
@@ -162,6 +163,9 @@ static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
     if ((v = yyjson_obj_get(obj, "mp3_bitrate")) && yyjson_is_int(v)) {
         r->mp3_bitrate = yyjson_get_int(v);
     }
+    if ((v = yyjson_obj_get(obj, "mastering_profile")) && yyjson_is_str(v)) {
+        r->mastering_profile = yy_str(v);
+    }
 }
 
 bool request_parse_json(Yue2Request * r, const char * json) {
@@ -255,6 +259,9 @@ std::string request_to_json(const Yue2Request * r, bool sparse) {
     }
     if (!sparse || r->mp3_bitrate != d.mp3_bitrate) {
         yyjson_mut_obj_add_int(doc, root, "mp3_bitrate", r->mp3_bitrate);
+    }
+    if (!sparse || r->mastering_profile != d.mastering_profile) {
+        yyjson_mut_obj_add_strncpy(doc, root, "mastering_profile", r->mastering_profile.c_str(), r->mastering_profile.size());
     }
 
     char *      json = yyjson_mut_write(doc, WRITE_FLAGS, NULL);

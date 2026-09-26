@@ -1,0 +1,141 @@
+/* Reference studio: compact creation desk, expandable editors and persistent playback. */
+.yue2-app .studio-rail > .rail-card {flex-shrink:0}
+.yue2-app .request-form .sound-direction-grid input {height:28px!important;min-height:0!important;padding:4px 8px!important}
+.yue2-app .request-form #arrangement-workbench input:not([type=checkbox]),.yue2-app .request-form #arrangement-workbench select {height:34px!important;min-height:0!important;padding:5px 8px!important}
+.yue2-app .request-form #arrangement-workbench .meta-grid label {display:flex;flex-flow:row wrap;gap:5px;align-content:flex-start}
+.yue2-app .request-form #arrangement-workbench .meta-grid label input {flex-basis:100%;width:100%}
+.yue2-app .request-form #arrangement-workbench .duration-copy {flex-direction:row;gap:12px;align-items:center}
+.yue2-app .request-form #arrangement-workbench .duration-auto {min-height:34px;padding:4px 9px}
+.yue2-app .request-form #arrangement-workbench .duration-help {font-size:9px}
+.yue2-app .request-form .sound-card {gap:7px}
+.yue2-app .request-form .sound-card > .card-head {min-height:25px}
+.yue2-app .request-form .sound-card .field {gap:5px}
+.yue2-app .request-form .collapsible > summary {text-transform:none;letter-spacing:0}
+.yue2-app .sampling-control input[type=range] {appearance:none;height:4px;padding:0;background:var(--bg-btn-hover);border:0;border-radius:6px}
+.yue2-app .sampling-control input[type=range]::-webkit-slider-thumb {appearance:none;width:10px;height:10px;border-radius:50%;background:#70f0d8;border:1px solid var(--accent)}
+.yue2-app .sampling-control input[type=range]::-moz-range-thumb {width:10px;height:10px;border-radius:50%;background:#70f0d8;border:1px solid var(--accent)}
+.yue2-app .sampling-control input[type=range]:disabled {opacity:.7}
+@media(max-width:680px) {.yue2-app header.topbar {flex-wrap:nowrap!important;gap:7px!important}.yue2-app .status-pill {display:none!important}.yue2-app .topbar-theme {margin-left:auto}.yue2-app .request-form #arrangement-workbench .meta-grid label {font-size:10px}}
+.sr-only {position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.yue2-app .topbar-theme select {width:145px;height:35px;padding:0 12px;border-radius:12px;background:var(--bg-input);font-size:12px}
+.yue2-app .brand-name {font-size:21px;letter-spacing:-.04em}
+.yue2-app .brand-mark {width:40px;height:40px;background:linear-gradient(145deg,#53eda7,#00c8cd);box-shadow:0 0 22px #00dac219}
+.yue2-app .status-pill {max-width:340px}
+.yue2-app .request-form .card {border-radius:11px;background:linear-gradient(130deg,color-mix(in srgb,var(--bg-panel) 88%,var(--accent) 3%),var(--bg));padding:12px;gap:10px}
+.yue2-app .request-form .desk-nav {padding:3px 0 8px;background:var(--bg);border:0}
+.yue2-app .request-form .desk-nav a {padding:7px 5px;gap:11px}
+.yue2-app .request-form .desk-nav a > span:first-child {width:34px;height:34px;flex-basis:34px;font-size:17px;background:linear-gradient(145deg,#284659,#12232b)}
+.yue2-app .request-form .desk-nav a:first-child > span:first-child {background:var(--accent);color:#03221c}
+.yue2-app .request-form .desk-nav .step-copy strong {font-size:12px}
+.yue2-app .request-form .desk-nav .step-copy small {font-size:10px}
+.yue2-app .request-form .sound-card > .card-head h3 {font-size:11px;color:var(--fg-dim)}
+.yue2-app .request-form .sound-card > .card-head .step-number {display:none}
+.yue2-app .request-form .toolbar {margin-left:auto}
+.yue2-app .request-form .toolbar .tool-btn {border:1px solid var(--border);background:var(--bg-btn);padding:6px 9px;color:var(--fg);border-radius:7px}
+.sound-direction-grid {display:grid;grid-template-columns:1.05fr 1fr;gap:12px;min-width:0;scroll-margin-top:75px}
+.brief-column,.preset-column {min-width:0;display:flex;flex-direction:column;gap:7px}
+.yue2-app .request-form .field-name {display:flex;justify-content:space-between;align-items:center;font-size:12px}
+.field-name small {font-size:10px;font-weight:400;color:var(--fg-dim)}
+.yue2-app .request-form .brief-column textarea {height:95px;min-height:75px;resize:vertical;font-size:12px;padding:9px 11px;line-height:1.6}
+.track-name-row {display:flex;align-items:center;gap:10px;font-size:10px;color:var(--fg-dim)}
+.yue2-app .request-form .track-name-row input {flex:1;padding:5px 8px;min-width:0}
+.style-tags {display:flex;gap:5px;flex-wrap:wrap}
+.style-tags:empty {display:none}
+.selected-style-slots {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.selected-style-slot {position:relative;min-width:0;min-height:142px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:10px 6px;border:1px solid var(--border);border-radius:10px;background:var(--bg-input);color:var(--fg);text-align:center}
+.selected-style-slot img {width:64px;height:64px;object-fit:cover;border-radius:8px}
+.selected-style-slot strong {font-size:11px;line-height:1.3;overflow-wrap:anywhere}
+.selected-style-slot small {font-size:9px;color:var(--fg-dim)}
+.selected-style-slot.inactive {opacity:.6}
+.selected-style-slot .remove-selected-style {position:absolute;top:4px;right:4px;display:grid;place-items:center;width:24px;height:24px;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--bg-input);color:var(--fg);cursor:pointer}
+.empty-style-slot {border-style:dashed;cursor:pointer;background:transparent}
+.empty-style-slot > span {font-size:27px;font-weight:300;color:var(--accent)}
+.empty-style-slot:hover,.empty-style-slot:focus-visible {border-color:var(--accent)}
+.custom-direction {margin-top:10px}
+.custom-direction > summary {cursor:pointer;color:var(--fg-dim);font-size:11px;margin-bottom:8px}
+.remix-track-button {flex-shrink:0;padding:5px 7px;border:1px solid var(--border);border-radius:6px;background:var(--bg-btn);color:var(--fg);font-size:10px;cursor:pointer}
+.remix-track-button:disabled {opacity:.4;cursor:default}
+.remix-panel {width:100%;box-sizing:border-box;margin:8px 0;padding:12px;border:1px solid var(--accent);border-radius:10px;background:var(--bg-input)}
+.remix-heading {display:flex;align-items:center;justify-content:space-between;gap:10px}
+.remix-heading > div {display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.remix-heading small,.remix-scale,.remix-panel p,.remix-hint {font-size:11px;color:var(--fg-dim);line-height:1.5}
+.remix-variation {display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;margin-top:14px;font-size:12px}
+.remix-variation input {width:100%;accent-color:var(--accent)}
+.remix-scale {display:flex;justify-content:space-between;gap:10px}
+.lyric-profile-selector {margin:0 0 12px;padding:12px;border:1px solid var(--border);border-radius:9px;background:var(--bg-input)}
+.lyric-profile-selector p {font-size:12px;line-height:1.5;margin:8px 0}
+.lyric-profile-selector > small {color:var(--fg-dim);font-size:11px;line-height:1.4}
+.style-tags button {display:flex;align-items:center;gap:7px;padding:4px 7px;border:1px solid var(--border);border-radius:6px;background:var(--bg-btn);color:var(--fg);font-size:9px;cursor:pointer}
+.yue2-app .request-form .preset-column .style-search {padding:4px 8px;font-size:10px}
+.yue2-app .request-form .preset-discovery {display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden;max-height:none;padding:3px 2px 6px;cursor:grab;user-select:none;overscroll-behavior-x:contain}
+.yue2-app .request-form .preset-discovery.is-dragging,.yue2-app .request-form .preset-discovery.is-dragging button {cursor:grabbing}
+.yue2-app .request-form .preset-discovery:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+.yue2-app .request-form .preset-discovery button.style-tile {display:flex;position:relative;flex-direction:column;flex:0 0 78px;gap:5px;padding:3px;min-height:104px;border-radius:8px;scroll-snap-align:start;text-align:center;background:var(--bg-input)}
+.yue2-app .request-form .preset-discovery button.style-tile img {width:70px;height:65px;border-radius:5px;object-fit:cover}
+.yue2-app .request-form .preset-discovery .style-tile-copy {gap:2px;width:100%}
+.yue2-app .request-form .preset-discovery .style-tile-copy strong {font-size:9px;line-height:1.35;white-space:normal}
+.yue2-app .request-form .preset-discovery .style-tile-copy small {display:none}
+.yue2-app .request-form .preset-discovery .style-tile-add {position:absolute;right:6px;top:5px;border-radius:50%;background:#031a1ce6;width:16px;height:16px;font-size:10px}
+.yue2-app .request-form .preset-discovery button.chosen {box-shadow:0 0 0 1px var(--accent),0 0 13px #22d9b329}
+.blend-disclosure {grid-column:1/-1;border-top:1px solid var(--border);padding-top:6px}
+.blend-disclosure > summary,.engine-options > summary,.sampling-extra > summary {cursor:pointer;color:var(--fg-dim);font-size:10px;padding:3px 0}
+.blend-disclosure > summary span {float:right;color:var(--accent);font-size:9px}
+.blend-disclosure[open] > summary {margin-bottom:9px}
+.yue2-app .request-form > .words-card {padding:0;display:block}
+.yue2-app .request-form > .words-card > summary {padding:9px 12px;display:flex;cursor:pointer;list-style:none}
+.yue2-app .request-form > .words-card > summary::after {content:'+';margin-left:auto;color:var(--accent)}
+.yue2-app .request-form > .words-card[open] > summary::after {content:'−'}
+.words-card > summary .step-number {width:20px!important;height:20px!important;font-size:9px!important;background:var(--bg-btn)!important;color:var(--fg)!important}
+.words-card > summary .section-meta {margin-left:auto;font-size:9px}
+.lyrics-content {display:flex;flex-direction:column;gap:12px;padding:12px}
+.lyrics-content > .card-head h3 {display:none!important}
+.lyrics-content > .card-head {justify-content:flex-end}
+.yue2-app .request-form > #arrangement-workbench {display:grid;grid-template-columns:1fr 2fr;gap:9px 12px;padding-top:0;overflow:hidden}
+.yue2-app .request-form > #arrangement-workbench > .card-head {grid-column:1/-1;margin:0 -12px;padding:8px 12px;background:linear-gradient(100deg,#44337388,#192a4070)}
+.yue2-app .request-form > #arrangement-workbench .step-number {width:22px;height:22px;background:transparent;color:#c0a7ff}
+.yue2-app .request-form > #arrangement-workbench > .field-row {grid-column:1;grid-row:2;display:flex;flex-direction:column;align-items:stretch;gap:5px}
+.yue2-app .request-form > #arrangement-workbench > .meta-grid {grid-column:2;grid-row:2;gap:10px}
+.yue2-app .request-form > #arrangement-workbench > .duration-auto {grid-column:1/-1;grid-row:3;padding:7px 10px;gap:10px}
+.yue2-app .request-form .duration-copy {display:flex;align-items:center;gap:12px}
+.yue2-app .request-form .duration-help {font-size:9px;margin:0}
+.yue2-app .request-form > #arrangement-workbench > .composition-choice {grid-column:1/-1;grid-row:4;display:flex;gap:10px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:8px;cursor:pointer}
+.composition-choice > span {display:flex;flex-direction:column;gap:4px;font-size:12px}
+.composition-choice small {font-size:10px;color:var(--fg-dim)}
+.composition-choice input {accent-color:var(--accent)}
+.yue2-app .request-form > #arrangement-workbench > .score-editor {grid-column:1/-1;grid-row:5}
+.yue2-app .request-form .score-editor > summary {padding:7px 10px;font-size:10px}
+.yue2-app .request-form .meta-grid input,.yue2-app .request-form .meta-grid select {padding:5px 8px;height:31px}
+.yue2-app .request-form .collapsible {padding:0;overflow:hidden;border-top-width:1px!important}
+.yue2-app .request-form .collapsible > summary {padding:8px 12px;margin:0;font-size:12px;min-height:34px}
+.yue2-app .request-form #score-sampling > summary {background:linear-gradient(100deg,#08634499,#123b3377)}
+.yue2-app .request-form #semantic-sampling > summary {background:linear-gradient(100deg,#12577b99,#10354877)}
+.yue2-app .request-form #render-workbench > summary {background:linear-gradient(100deg,#69334099,#3c253077)}
+.yue2-app .request-form .details-body {padding:10px 12px}
+.sampling-extra {margin-top:8px}
+.sampling-extra .field {margin-top:8px}
+.yue2-app .request-form > .engine-card {display:grid;grid-template-columns:auto 1fr;align-items:center;padding:8px 12px;border:1px solid #67512b;background:linear-gradient(100deg,#49351588,#221e1777)}
+.yue2-app .request-form .engine-card .step-number {display:none}
+.yue2-app .request-form .engine-card .engine-indicator {display:none}
+.yue2-app .request-form .engine-mode {margin:0;min-width:0}
+.yue2-app .request-form .engine-mode button {padding:7px 8px;font-size:10px}
+.engine-options {grid-column:1/-1}
+.engine-options[open] {display:flex;flex-direction:column;gap:10px}
+.yue2-app .request-form .action-bar {padding:0;border:0;background:var(--bg);gap:10px;border-radius:9px}
+.yue2-app .request-form .action-bar .generate-btn {min-height:47px;font-size:16px;background:linear-gradient(105deg,#2bd48a,#06d3bc)}
+.yue2-app .request-form .action-bar .ghost-btn {min-height:47px;font-size:12px}
+.yue2-app .rail-card {border-radius:12px;background:linear-gradient(135deg,var(--bg-panel),var(--bg-card));box-shadow:inset 0 1px 0 #ffffff03}
+.yue2-app .preview-card {min-height:215px}
+.yue2-app .preview-player {padding:17px 12px;min-height:102px;border:0;background:var(--bg-input)}
+.yue2-app .preview-wave,.yue2-app .preview-wave canvas,.yue2-app .preview-wave .waveform {height:76px}
+.yue2-app .preview-play {width:45px;height:45px}
+.yue2-app .rail-kicker {display:none}
+.yue2-app .recent-track {min-height:60px;border-radius:9px}
+.yue2-app .recent-info strong {font-size:11px}
+.yue2-app .recent-info small {font-size:10px}
+.yue2-app .activity-card .log-body {min-height:140px;max-height:230px;font-size:10px}
+.yue2-app .settings-card {background:var(--bg-panel)}
+.yue2-app .quick-style {height:46px;background:var(--bg-input)}
+.yue2-app .side-nav button,.yue2-app .side-nav a {font-size:13px}
+@media(min-width:1500px) {.yue2-app main.workspace-main {grid-template-columns:minmax(0,1fr) minmax(350px,32%)}.yue2-app .request-form .preset-discovery button.style-tile {flex-basis:86px}.yue2-app .request-form .preset-discovery button.style-tile img {width:78px;height:72px}}
+@media(max-width:1100px) {.sound-direction-grid {grid-template-columns:1fr}.blend-disclosure {grid-column:1}.yue2-app .topbar-theme select {width:95px}.words-card > summary .section-meta {display:none}}
+@media(max-width:680px) {.yue2-app .brand-name {font-size:15px}.yue2-app .topbar-theme select {width:78px;font-size:10px;padding:4px}.yue2-app .status-pill {max-width:105px}.yue2-app .settings-shortcut {display:none}.sound-direction-grid {grid-template-columns:1fr}.yue2-app .request-form > #arrangement-workbench {display:flex;flex-direction:column;align-items:stretch}.yue2-app .request-form > #arrangement-workbench > .card-head {margin:0 -12px}.yue2-app .request-form > #arrangement-workbench > .meta-grid {grid-template-columns:repeat(3,minmax(0,1fr))}.yue2-app .request-form > .engine-card {display:flex;align-items:stretch}.yue2-app .request-form .duration-help {display:none}.yue2-app .request-form .desk-nav .step-copy strong {font-size:10px}.yue2-app .request-form .desk-nav a {gap:5px}.yue2-app .request-form .desk-nav a > span:first-child {width:25px;height:25px;flex-basis:25px;font-size:12px}.yue2-app .request-form .toolbar .tool-btn {padding:5px}.yue2-app .request-form .action-bar .generate-btn {font-size:13px}}

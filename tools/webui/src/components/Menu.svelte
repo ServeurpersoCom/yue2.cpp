@@ -57,7 +57,7 @@
 </script>
 
 <div class="menu" bind:this={root}>
-	<button type="button" class="menu-trigger" {disabled} onclick={toggle}>
+	<button type="button" class="menu-trigger" class:open {disabled} onclick={toggle}>
 		{@render trigger()}
 	</button>
 	{#if open}
@@ -67,6 +67,7 @@
 				<button
 					type="button"
 					class="menu-item"
+					class:danger={item.label.toLowerCase().startsWith('delete')}
 					disabled={item.disabled}
 					onclick={() => select(item)}
 				>
@@ -85,47 +86,68 @@
 	}
 	.menu-trigger {
 		background: none;
-		border: none;
+		border: 1px solid transparent;
+		border-radius: 7px;
 		cursor: pointer;
-		padding: 0.15rem;
-		color: var(--fg);
+		padding: 0.3rem;
+		color: var(--fg-faint);
 		display: flex;
 		align-items: center;
-		gap: 0.2rem;
-		font-size: 0.8rem;
+		transition:
+			color 0.15s,
+			background 0.15s,
+			border-color 0.15s;
 	}
-	.menu-trigger:hover {
-		color: var(--focus);
+	.menu-trigger:hover,
+	.menu-trigger.open {
+		color: var(--fg);
+		background: var(--bg-btn);
+		border-color: var(--border);
 	}
 	.menu-items {
 		position: absolute;
-		top: calc(100% + 2px);
+		top: calc(100% + 6px);
 		right: 0;
-		background: var(--bg-card);
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-		border-radius: 3px;
+		background: var(--bg-card-2);
+		border: 1px solid var(--border-strong);
+		box-shadow: var(--shadow);
+		border-radius: 10px;
+		padding: 0.3rem;
 		display: flex;
 		flex-direction: column;
-		min-width: 8rem;
-		z-index: 10;
+		min-width: 11rem;
+		z-index: 20;
+		animation: menu-in 0.12s ease-out;
 	}
 	.menu-item {
 		background: none;
 		border: none;
+		border-radius: 7px;
 		cursor: pointer;
-		padding: 0.15rem 0.5rem;
+		padding: 0.45rem 0.6rem;
 		color: var(--fg);
 		text-align: left;
 		font-size: 0.8rem;
 		white-space: nowrap;
 		display: flex;
 		align-items: center;
-		gap: 0.4rem;
+		gap: 0.55rem;
+		transition: background 0.12s;
 	}
 	.menu-item:hover:not(:disabled) {
 		background: var(--bg-btn-hover);
 	}
 	.menu-item:disabled {
-		color: var(--fg-dim);
+		color: var(--fg-faint);
+		cursor: default;
+	}
+	.menu-item.danger {
+		color: var(--error);
+	}
+	@keyframes menu-in {
+		from {
+			opacity: 0;
+			transform: translateY(-4px);
+		}
 	}
 </style>
