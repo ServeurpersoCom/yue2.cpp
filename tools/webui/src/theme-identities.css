@@ -1,0 +1,212 @@
+﻿/* Theme identities: geometry, typography, materials and navigation, not only hue.
+   Repeated data-theme raises this final layer above the legacy component skins. */
+html:root[data-theme][data-theme] {
+  --theme-font: 'Segoe UI', system-ui, sans-serif;
+  --theme-heading: var(--theme-font);
+  --theme-radius: 16px;
+  --theme-control-radius: 9px;
+  --theme-surface: linear-gradient(145deg,var(--bg-card-2),var(--bg-card));
+  --theme-shadow: 0 12px 28px #0003, inset 0 1px #ffffff08;
+  --theme-backdrop: var(--bg);
+  --theme-sidebar: var(--bg-panel);
+  --theme-nav: var(--accent);
+  --theme-nav-ink: var(--bg);
+  --theme-heading-spacing: -.035em;
+}
+html:root[data-theme][data-theme] .yue2-app {
+  font-family:var(--theme-font); background:var(--theme-backdrop);
+}
+html:root[data-theme][data-theme] .yue2-app::before {background:none}
+html:root[data-theme][data-theme] .yue2-app header.topbar {
+  background:var(--bg-panel); border-bottom:1px solid var(--border-strong);
+  box-shadow:0 4px 22px #00000012;
+}
+html:root[data-theme][data-theme] .yue2-app .left-sidebar {background:var(--theme-sidebar);border-right:1px solid var(--border)}
+html:root[data-theme][data-theme] .yue2-app .brand-mark {background:var(--accent-grad);color:var(--bg);border-radius:var(--theme-control-radius);box-shadow:0 3px 16px color-mix(in srgb,var(--accent) 20%,transparent)}
+html:root[data-theme][data-theme] .yue2-app .brand-name {font-family:var(--theme-heading);letter-spacing:var(--theme-heading-spacing);color:var(--fg)}
+html:root[data-theme][data-theme] .yue2-app .side-nav :is(button,a) {border-radius:var(--theme-control-radius)}
+html:root[data-theme][data-theme] .yue2-app .side-nav button.active {background:var(--theme-nav);color:var(--theme-nav-ink);box-shadow:none;border:1px solid var(--border-strong)}
+html:root[data-theme][data-theme] .yue2-app :is(.request-form > .card,.studio-rail > .rail-card,.song-list > .card,.library-page-head) {
+  background:var(--theme-surface);border:1px solid var(--border-strong);border-radius:var(--theme-radius);box-shadow:var(--theme-shadow);
+}
+html:root[data-theme][data-theme] .yue2-app .request-form > .card {border-top:2px solid var(--section-accent,var(--accent))}
+html:root[data-theme][data-theme] .yue2-app .creation-heading {display:block;grid-column:1/-1;padding:14px 2px 8px}
+html:root[data-theme][data-theme] .yue2-app .creation-heading h1,
+html:root[data-theme][data-theme] .yue2-app .library-page-head h1 {font-family:var(--theme-heading);font-size:clamp(27px,2.8vw,40px);letter-spacing:var(--theme-heading-spacing);line-height:1.15;color:var(--fg)}
+html:root[data-theme][data-theme] .yue2-app .creation-heading p {color:var(--fg-dim);font-size:13px;margin-top:8px;line-height:1.6}
+html:root[data-theme][data-theme] .yue2-app .request-form {display:flex;flex-direction:column;align-items:stretch}
+html:root[data-theme][data-theme] .yue2-app .request-form :is(.card-head h3,.heading h3),
+html:root[data-theme][data-theme] .yue2-app .rail-card-heading h2 {font-family:var(--theme-heading);letter-spacing:var(--theme-heading-spacing)}
+html:root[data-theme][data-theme] .yue2-app .request-form .desk-nav {position:relative;top:auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;background:transparent;border:0;padding:0 0 6px}
+html:root[data-theme][data-theme] .yue2-app .request-form .desk-nav a {background:var(--bg-card-2);border:1px solid var(--border-strong);border-radius:var(--theme-control-radius);padding:13px 9px;min-width:0;gap:9px}
+html:root[data-theme][data-theme] .yue2-app .request-form .desk-nav a > span:first-child {background:var(--bg-input);color:var(--accent);border-radius:var(--theme-control-radius);border:1px solid var(--border);width:30px;height:30px;flex-basis:30px}
+html:root[data-theme][data-theme] .yue2-app :is(input:not([type='range']):not([type='checkbox']),select,textarea) {border-radius:var(--theme-control-radius)}
+html:root[data-theme][data-theme] .yue2-app .request-form :is(.planner-group,.music-mixer,.style-mixer,.writer-disclosure,.engine-mode,.engine-metrics) {border-radius:var(--theme-control-radius)}
+html:root[data-theme][data-theme] .yue2-app .request-form .action-bar {border-radius:var(--theme-radius);background:var(--bg-panel);border:1px solid var(--border-strong);box-shadow:0 -5px 22px #0002}
+html:root[data-theme][data-theme] .yue2-app .request-form :is(.action-bar .generate-btn,.generate-lyrics) {background:var(--accent-grad);color:var(--bg);border-radius:var(--theme-control-radius);border:1px solid var(--accent);font-weight:750}
+html:root[data-theme][data-theme] .yue2-app .sampling-control input[type=range]::-webkit-slider-thumb {background:var(--accent)}
+html:root[data-theme][data-theme] .yue2-app .sampling-control input[type=range]::-moz-range-thumb {background:var(--accent)}
+html:root[data-theme][data-theme] .yue2-app .status-pill.offline {color:var(--fg-dim)}
+
+/* CYBERPUNK: black technical panels, electric cyan, acid-yellow actions, magenta traces. */
+html:root[data-theme='cyberpunk'][data-theme] {
+  --bg:#080d12;--bg-panel:#0b141c;--bg-card:#101d27;--bg-card-2:#182a35;--bg-input:#08131b;--bg-btn:#20343e;--bg-btn-hover:#2b4653;
+  --fg:#edfaff;--fg-dim:#b1ccd5;--fg-faint:#94b6c3;--border:#284653;--border-strong:#3e6977;
+  --accent:#e6fa53;--accent-2:#42e7f5;--focus:#42e7f5;--accent-grad:linear-gradient(105deg,#e6fa53,#bce84f);
+  --waveform-dim:#37505b;--waveform-play:#e6fa53;--waveform-range:#42e7f5;
+  --theme-heading:'Bahnschrift','Consolas',monospace;--theme-heading-spacing:.035em;
+  --theme-radius:2px;--theme-control-radius:2px;
+  --theme-surface:linear-gradient(120deg,#10222c,#0d1822 75%);
+  --theme-sidebar:linear-gradient(180deg,#0b1c26,#080d12);
+  --theme-shadow:3px 3px 0 #0005,inset 0 1px #42e7f51c;
+  --theme-backdrop:linear-gradient(#42e7f507 1px,transparent 1px),linear-gradient(90deg,#42e7f507 1px,transparent 1px),#080d12;
+  --theme-nav:#e6fa5315;--theme-nav-ink:#e6fa53;
+}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app {background-size:32px 32px,32px 32px,auto}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app header.topbar {border-bottom:2px solid #42e7f5;box-shadow:0 2px 24px #42e7f519}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app .brand-name {text-transform:uppercase;text-shadow:2px 0 #ff4aab60}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app .creation-heading {border-left:4px solid var(--accent);padding-left:18px;background:linear-gradient(90deg,#e6fa5308,transparent)}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app .creation-heading h1 {text-transform:uppercase;font-weight:800}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app .request-form > .card {border-top-color:#42e7f5;background-image:linear-gradient(135deg,transparent calc(100% - 13px),#42e7f5 calc(100% - 13px),#42e7f5 calc(100% - 11px),#0b141c calc(100% - 11px)),var(--theme-surface)}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app .request-form > .words-card {border-top-color:#ff66b5}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app .side-nav button.active {border-left:3px solid var(--accent)}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app .request-form .desk-nav a {border-bottom:2px solid var(--accent-2);font-family:'Consolas',monospace}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app .request-form .action-bar {border-top:3px solid var(--accent);background-image:repeating-linear-gradient(135deg,#e6fa5310 0 5px,transparent 5px 12px)}
+html:root[data-theme='cyberpunk'][data-theme] .yue2-app .request-form .action-bar .generate-btn {text-transform:uppercase;letter-spacing:.1em;box-shadow:4px 4px 0 #42e7f540}
+
+/* DARK: a quiet graphite mastering console with machined edges and signal LEDs. */
+html:root[data-theme='dark'][data-theme] {
+  --bg:#101112;--bg-panel:#17191b;--bg-card:#202326;--bg-card-2:#2a2e32;--bg-input:#141719;--bg-btn:#33383c;--bg-btn-hover:#41484e;
+  --fg:#f0f2f3;--fg-dim:#bdc4c9;--fg-faint:#a0abb3;--border:#383e43;--border-strong:#4b535b;
+  --accent:#bce6cd;--accent-2:#d7bd86;--focus:#bce6cd;--accent-grad:linear-gradient(180deg,#d8efdf,#a9cdb7);
+  --waveform-dim:#46514b;--waveform-play:#bce6cd;--waveform-range:#d7bd86;
+  --theme-radius:8px;--theme-control-radius:5px;--theme-surface:linear-gradient(180deg,#282c30,#202326 75px);
+  --theme-sidebar:linear-gradient(90deg,#181a1c,#1c1f22);
+  --theme-shadow:0 8px 18px #0004,inset 0 1px #ffffff12;
+  --theme-nav:#303b35;--theme-nav-ink:#d9f0e2;
+}
+html:root[data-theme='dark'][data-theme] .yue2-app .request-form > .card {border-top:1px solid #596168}
+html:root[data-theme='dark'][data-theme] .yue2-app .side-nav button.active {border-left:3px solid var(--accent)}
+html:root[data-theme='dark'][data-theme] .yue2-app :is(.sidebar-label,.brand-version,.step-copy small) {font-family:'Consolas',monospace;letter-spacing:.07em}
+html:root[data-theme='dark'][data-theme] .yue2-app .request-form .desk-nav a > span:first-child {border-radius:50%;box-shadow:inset 0 2px 6px #0009,0 1px #ffffff16;color:var(--accent-2)}
+html:root[data-theme='dark'][data-theme] .yue2-app .rail-card-heading {border-bottom:3px double var(--border-strong)}
+
+/* MINT: botanical curves and a spacious, calm green drafting desk. */
+html:root[data-theme='mint'][data-theme] {
+  --bg:#0c1815;--bg-panel:#10251e;--bg-card:#19362b;--bg-card-2:#234538;--bg-input:#10271f;--bg-btn:#2c5141;--bg-btn-hover:#386550;
+  --fg:#f1faed;--fg-dim:#c3d8c6;--fg-faint:#abc5b3;--border:#385c49;--border-strong:#557962;
+  --accent:#b9e99e;--accent-2:#88dbbe;--focus:#c3f2a8;--accent-grad:linear-gradient(110deg,#c9eeae,#88dbbe);
+  --waveform-dim:#496451;--waveform-play:#b9e99e;--waveform-range:#88dbbe;
+  --theme-heading:'Georgia',serif;--theme-heading-spacing:-.025em;--theme-radius:24px;--theme-control-radius:14px;
+  --theme-surface:linear-gradient(145deg,#1f3d30,#152e25);--theme-sidebar:linear-gradient(170deg,#1e392b,#10251e 70%);
+  --theme-shadow:0 10px 28px #020c0730,inset 0 1px #d2ffcd12;
+  --theme-nav:#c5e7ad;--theme-nav-ink:#153023;
+  --theme-backdrop:radial-gradient(ellipse at 100% 0,#6fa86a20,transparent 55%),#0c1815;
+}
+html:root[data-theme='mint'][data-theme] .yue2-app .creation-heading {border-bottom:1px solid var(--border);padding-bottom:20px}
+html:root[data-theme='mint'][data-theme] .yue2-app .creation-heading h1 {font-weight:400}
+html:root[data-theme='mint'][data-theme] .yue2-app .request-form > .card {border-top-width:1px;border-radius:24px 8px 24px 24px;padding:20px}
+html:root[data-theme='mint'][data-theme] .yue2-app .request-form > .card.collapsible {padding:0}
+html:root[data-theme='mint'][data-theme] .yue2-app .request-form .desk-nav a {border-radius:22px 7px 22px 22px}
+html:root[data-theme='mint'][data-theme] .yue2-app .request-form .desk-nav a > span:first-child {border-radius:50% 50% 8px 50%;background:#b9e99e18}
+html:root[data-theme='mint'][data-theme] .yue2-app .brand-mark {border-radius:15px 4px 15px 15px}
+
+/* BURNT ORANGE: smoked walnut, cream typography and brass analog details. */
+html:root[data-theme='burnt-orange'][data-theme] {
+  --bg:#1b1612;--bg-panel:#261f18;--bg-card:#34291f;--bg-card-2:#453529;--bg-input:#211b15;--bg-btn:#55412f;--bg-btn-hover:#67513c;
+  --fg:#fff0d8;--fg-dim:#e0c8a5;--fg-faint:#c8ad89;--border:#634a34;--border-strong:#886644;
+  --accent:#ffb777;--accent-2:#e6ce8b;--focus:#ffd69f;--accent-grad:linear-gradient(180deg,#ffc088,#ed9457);
+  --waveform-dim:#786043;--waveform-play:#ffb777;--waveform-range:#e6ce8b;
+  --theme-heading:'Georgia',serif;--theme-heading-spacing:-.02em;--theme-radius:10px;--theme-control-radius:5px;
+  --theme-surface:radial-gradient(circle at 8px 8px,#b3966d 0 1px,#211b15 2px 3px,transparent 4px),radial-gradient(circle at calc(100% - 8px) 8px,#b3966d 0 1px,#211b15 2px 3px,transparent 4px),linear-gradient(160deg,#403326,#30261e);
+  --theme-sidebar:repeating-linear-gradient(92deg,#38261d 0 2px,#322219 2px 6px,#35251b 6px 11px);
+  --theme-shadow:0 8px 20px #0004,inset 0 0 0 3px #00000016;
+  --theme-nav:#dc945b;--theme-nav-ink:#241b13;
+  --theme-backdrop:radial-gradient(ellipse at 50% 0,#b97b2520,transparent 65%),#1b1612;
+}
+html:root[data-theme='burnt-orange'][data-theme] .yue2-app .request-form > .card {border-top:1px solid var(--border-strong)}
+html:root[data-theme='burnt-orange'][data-theme] .yue2-app .creation-heading h1 {font-style:italic;font-weight:400}
+html:root[data-theme='burnt-orange'][data-theme] .yue2-app .creation-heading {border-bottom:4px double var(--border-strong);padding-bottom:18px}
+html:root[data-theme='burnt-orange'][data-theme] .yue2-app .request-form .desk-nav a {border-bottom:3px solid #bb7847;box-shadow:0 3px 0 #0004}
+html:root[data-theme='burnt-orange'][data-theme] .yue2-app .request-form .desk-nav a > span:first-child {background:#e6ce8b;color:#38271a;border-radius:50%;font-family:Georgia,serif}
+html:root[data-theme='burnt-orange'][data-theme] .yue2-app :is(.brand-version,.sidebar-label) {font-family:'Consolas',monospace;letter-spacing:.12em;color:var(--accent-2)}
+html:root[data-theme='burnt-orange'][data-theme] .yue2-app .rail-card-heading {border-bottom:3px double var(--border-strong)}
+
+/* COLORFUL: a graphic record sleeve, bold section colors and offset ink shadows. */
+html:root[data-theme='colorful'][data-theme] {
+  --bg:#17102f;--bg-panel:#29164b;--bg-card:#35205a;--bg-card-2:#493078;--bg-input:#201337;--bg-btn:#58368a;--bg-btn-hover:#7144ac;
+  --fg:#fff8ef;--fg-dim:#e0d4ef;--fg-faint:#c4b8d9;--border:#675879;--border-strong:#8e78a0;
+  --accent:#ffe052;--accent-2:#46efda;--focus:#ffe052;--accent-grad:linear-gradient(110deg,#ffe052,#ffad69 48%,#ff8ecb);
+  --waveform-dim:#8060a5;--waveform-play:#ffe052;--waveform-range:#46efda;
+  --theme-heading:'Trebuchet MS','Segoe UI',sans-serif;--theme-heading-spacing:-.04em;
+  --theme-radius:18px;--theme-control-radius:12px;--theme-surface:linear-gradient(135deg,#45266a,#2b1c4a);
+  --theme-shadow:5px 5px 0 #080714;--theme-nav:linear-gradient(110deg,#ffe052,#ff9cb8);--theme-nav-ink:#211c38;
+  --theme-sidebar:linear-gradient(165deg,#512276,#292056 55%,#103f4c);
+  --theme-backdrop:radial-gradient(ellipse at 95% 8%,#da32944d,transparent 48%),radial-gradient(ellipse at 12% 85%,#13cdb538,transparent 48%),#17102f;
+}
+html:root[data-theme='colorful'][data-theme] .yue2-app header.topbar {background:linear-gradient(100deg,#49216c,#24346a 60%,#125357);border-bottom:3px solid #46efda}
+html:root[data-theme='colorful'][data-theme] .yue2-app .creation-heading {padding:24px;border:1px solid #ffc7a0;border-radius:18px;background:linear-gradient(115deg,#ffe052,#ffb775 45%,#ff91c7 78%,#b8a0ff);box-shadow:5px 5px 0 #080714}
+html:root[data-theme='colorful'][data-theme] .yue2-app .creation-heading h1 {font-weight:900;color:#29143f}
+html:root[data-theme='colorful'][data-theme] .yue2-app .creation-heading p {color:#482348}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form > .card {border-top:5px solid var(--section-accent,var(--accent));background:linear-gradient(125deg,var(--section-tint,#45316d),#281b45)}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form > .sound-card {--section-accent:#46efda;--section-tint:#125052}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form > .words-card {--section-accent:#ff87c8;--section-tint:#602653}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form > #arrangement-workbench {--section-accent:#ffe052;--section-tint:#594027}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form > .engine-card {--section-accent:#bba0ff;--section-tint:#482b80}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form .card-head h3 {color:var(--section-accent,var(--accent))}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form .desk-nav a {--step-color:#46efda;background:var(--step-color);border:2px solid #110e20;box-shadow:3px 3px 0 #080714}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form .desk-nav a:nth-child(2) {--step-color:#ff87c8}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form .desk-nav a:nth-child(3) {--step-color:#ffe052}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form .desk-nav a:nth-child(4) {--step-color:#bba0ff}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form .desk-nav .step-copy :is(strong,small) {color:#241b35}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form .desk-nav a > span:first-child {background:#241b35;color:var(--step-color);border-radius:50%}
+html:root[data-theme='colorful'][data-theme] .yue2-app .brand-mark {transform:rotate(-7deg);box-shadow:3px 3px 0 #080714}
+html:root[data-theme='colorful'][data-theme] .yue2-app .studio-rail > .rail-card:nth-child(2n) {background:linear-gradient(135deg,#164e58,#29214e);border-top:3px solid #46efda}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form .action-bar {background:linear-gradient(110deg,#48236a,#203d57);border-color:#bba0ff}
+html:root[data-theme='colorful'][data-theme] .yue2-app .request-form :is(.action-bar .generate-btn,.generate-lyrics) {color:#29143f;box-shadow:0 4px 18px #ff87c82e}
+
+/* STUDIO GLASS: translucent pearl panels, fine edges and a floating navigation dock. */
+html:root[data-theme='studio'][data-theme] {
+  --theme-radius:22px;--theme-control-radius:12px;
+  --theme-surface:linear-gradient(135deg,#ffffffed,#f5f8ffcc);
+  --theme-shadow:0 12px 30px #526b9c15,inset 0 1px #fff;
+  --theme-sidebar:linear-gradient(165deg,#29364f,#263149 70%,#35344f);
+  --theme-nav:linear-gradient(110deg,#aff0e2,#d4ccff);--theme-nav-ink:#24334f;
+  --theme-backdrop:radial-gradient(ellipse at 25% 0,#ded6fa,transparent 48%),radial-gradient(ellipse at 100% 35%,#c6e8f3,transparent 50%),radial-gradient(ellipse at 55% 100%,#f7dfcd,transparent 42%),#edf1fa;
+}
+html:root[data-theme='studio'][data-theme] .yue2-app header.topbar {background:#ffffff9e;backdrop-filter:blur(22px);border-bottom-color:#fff}
+html:root[data-theme='studio'][data-theme] .yue2-app :is(.request-form > .card,.studio-rail > .rail-card) {backdrop-filter:blur(14px)}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form > .card {border-top:1px solid #fff}
+html:root[data-theme='studio'][data-theme] .yue2-app .creation-heading h1 {font-weight:650}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form .desk-nav {padding:8px;background:#ffffff60;border:1px solid #ffffffc9;border-radius:22px;box-shadow:0 6px 22px #55658f12}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form .desk-nav::before {display:none}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form .desk-nav a {flex-direction:row;text-align:left;border:1px solid #ffffffd9;border-radius:15px;background:#ffffff9c;box-shadow:0 3px 10px #55658f0c;padding:12px 8px}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form .desk-nav a > span:first-child {border-radius:10px;background:#e0f4ef;color:#176358}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form .desk-nav a:nth-child(2) > span:first-child {background:#ebe3f8;color:#654794}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form .desk-nav a:nth-child(3) > span:first-child {background:#fae8dd;color:#8d5030}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form .desk-nav a:nth-child(4) > span:first-child {background:#e0edf9;color:#355f94}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form .desk-nav .step-copy strong {font-size:12px}
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form :is(.action-bar .generate-btn,.generate-lyrics) {background:linear-gradient(110deg,#196e68,#405e93);color:#fff}
+
+@media(max-width:1100px) {
+ html:root[data-theme][data-theme] .yue2-app .request-form .desk-nav .step-copy small {display:none}
+}
+@media(max-width:680px) {
+ html:root[data-theme][data-theme] .yue2-app .creation-heading {padding-top:8px}
+ html:root[data-theme][data-theme] .yue2-app .creation-heading h1 {font-size:27px}
+ html:root[data-theme][data-theme] .yue2-app .request-form .desk-nav {grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+ html:root[data-theme][data-theme] .yue2-app .request-form .desk-nav a {padding:9px}
+ html:root[data-theme][data-theme] .yue2-app .brand-name {font-size:16px;letter-spacing:-.03em}
+ html:root[data-theme][data-theme] .yue2-app .topbar-theme select {width:116px;padding-inline:7px}
+ html:root[data-theme][data-theme] .yue2-app .request-form > .card:not(.collapsible) {padding:12px}
+}
+@media(prefers-reduced-motion:reduce) {
+ html:root[data-theme][data-theme] .yue2-app *,html:root[data-theme][data-theme] .yue2-app *::before,html:root[data-theme][data-theme] .yue2-app *::after {animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+/* Keep secondary actions legible on the light glass action bar. */
+html:root[data-theme='studio'][data-theme] .yue2-app .request-form .action-bar .ghost-btn {background:#e6edf9;color:#344568;border-color:#899dc1}
+@media(max-width:680px) {
+ html:root[data-theme][data-theme] .yue2-app .side-nav :is(button,a) {display:flex;flex-shrink:0}
+ html:root[data-theme][data-theme] .yue2-app .sidebar-albums {display:none}
+ html:root[data-theme][data-theme] .yue2-app .request-form .desk-nav a {min-height:52px}
+}

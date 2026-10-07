@@ -1,0 +1,93 @@
+/* Interaction layer: theme colors, real state, and restrained movement. */
+.storage-warning { position: fixed; left: 1rem; right: 1rem; bottom: 1rem; z-index: 110; padding: 1rem; border: 2px solid var(--error); background: var(--bg-card-2); color: var(--fg); border-radius: 12px; box-shadow: var(--shadow); }
+.storage-warning button { margin-left: .75rem; padding: .4rem .7rem; }
+html:root[data-theme] :is(button, a, summary, input, select, textarea) {
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms ease, opacity 140ms ease;
+}
+html:root[data-theme] :is(button, a, summary, input, select, textarea, [role="slider"]):focus-visible {
+  outline: 2px solid var(--focus, var(--accent));
+  outline-offset: 3px;
+}
+html:root[data-theme='studio'] .left-sidebar :is(button, a):focus-visible { outline-color: #9df8e4; }
+html:root[data-theme] :is(input:not([type="range"]), select, textarea):focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+html:root[data-theme] .yue2-app :is(.song-list > .card, .studio-rail > .rail-card, .request-form > .card, .planner-group, .quick-style) {
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  html:root[data-theme] button:enabled:hover {
+    border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+    box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 14%, transparent);
+    transform: translateY(-1px);
+  }
+  html:root[data-theme] .yue2-app :is(.song-list > .card, .studio-rail > .rail-card, .request-form > .card, .planner-group):hover {
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  }
+  html:root[data-theme] summary:hover { color: var(--accent); }
+  html:root[data-theme] input[type="range"]:enabled:hover { filter: brightness(1.12); }
+}
+html:root[data-theme] button:enabled:active {
+  transform: translateY(1px) scale(.985);
+  transition-duration: 90ms;
+  box-shadow: inset 0 1px 5px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+html:root[data-theme] button[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+html:root[data-theme] .yue2-app .song-list > .card.is-playing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent), 0 8px 28px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* Library labels previously inherited pale text intended for the old dark skin. */
+html:root[data-theme] .yue2-app .song-list .card-name { color: var(--fg); }
+html:root[data-theme] .yue2-app .library-page-head { background: var(--bg-card-2); color: var(--fg); border: 1px solid var(--border-strong); }
+html:root[data-theme] .yue2-app .library-page-head :is(h1, p) { color: var(--fg); }
+html:root[data-theme] .yue2-app .song-list .track-media.with-artwork .play-btn { background: var(--bg-btn); color: var(--fg); border: 1px solid var(--border-strong); }
+html:root[data-theme] .yue2-app .song-list .format-badge,
+html:root[data-theme] .dialog-footer button.primary { background: var(--accent); color: var(--bg); }
+html:root[data-theme] .fav-btn.active svg { animation: studio-favourite 220ms ease-out; }
+@keyframes studio-favourite { 50% { transform: scale(1.22); } }
+html:root[data-theme] .menu-item { min-height: 36px; }
+html:root[data-theme] .menu-items { max-height: min(70dvh, 480px); overflow-y: auto; overscroll-behavior: contain; }
+html:root[data-theme] .track-operation { display: flex; align-items: center; gap: .5rem; color: var(--accent); font-size: .8rem; margin: 0 0 .5rem; }
+html:root[data-theme] .track-operation svg { animation: studio-working 1.2s linear infinite; flex-shrink: 0; }
+@keyframes studio-working { to { transform: rotate(360deg); } }
+html:root[data-theme] .planner-group:focus-within { border-color: var(--accent); }
+html:root[data-theme] details[open] > summary { color: var(--fg); }
+html:root[data-theme] .quick-style .quick-art { transition: transform 180ms ease; }
+html:root[data-theme] .selected-style-slot:not(.empty-style-slot) { animation: studio-selection 180ms ease-out; }
+@keyframes studio-selection { from { opacity: .65; transform: scale(.97); } to { opacity: 1; transform: none; } }
+html:root[data-theme] :is(.preset-discovery, .style-ring-wrap):focus-within { border-color: var(--accent); }
+@media (hover: hover) and (pointer: fine) {
+  html:root[data-theme] .quick-style:hover .quick-art { transform: scale(1.05); }
+  html:root[data-theme] .yue2-app .request-form .action-bar .generate-btn:enabled:hover { box-shadow: 0 5px 24px color-mix(in srgb, var(--accent) 35%, transparent); }
+  html:root[data-theme] :is(.side-nav a, .start-link):hover { background: var(--bg-btn-hover); border-color: var(--accent); color: var(--fg); }
+  html:root[data-theme] .desk-nav a:hover { transform: translateY(-2px); filter: brightness(1.06); }
+}
+html:root[data-theme] .menu-item:enabled:hover { transform: none; box-shadow: none; }
+html:root[data-theme] .menu-item:focus-visible { background: var(--bg-btn-hover); outline-offset: -2px; }
+html:root[data-theme] .menu-item.danger:enabled:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--error) 14%, var(--bg-card));
+  color: var(--error);
+}
+html:root[data-theme] .dial.dragging { cursor: grabbing; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 24%, transparent); }
+html:root[data-theme] .waveform:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+html:root[data-theme] :is(button:disabled, fieldset:disabled button) { transform: none; box-shadow: none; cursor: not-allowed; }
+html:root[data-theme] [aria-busy="true"] { cursor: progress; }
+html:root[data-theme] .toast { background: var(--bg-card-2); border-color: var(--error); }
+html:root[data-theme] .toast.ok { border-color: var(--ok); }
+html:root[data-theme] .toast svg { color: var(--error); flex-shrink: 0; }
+html:root[data-theme] .toast.ok svg { color: var(--ok); }
+html:root[data-theme] .dialog { max-height: 90dvh; overflow-y: auto; }
+@media (pointer: coarse) {
+  html:root[data-theme] :is(.menu-trigger, .fav-btn) { min-width: 44px; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html:root[data-theme] *, html:root[data-theme] *::before, html:root[data-theme] *::after {
+    animation: none !important; transition: none !important; scroll-behavior: auto !important;
+  }
+  html:root[data-theme] button:is(:hover, :active), html:root[data-theme] button:hover img, html:root[data-theme] .desk-nav a:hover { transform: none !important; }
+}

@@ -1,0 +1,101 @@
+/* Shared contrast and surface hierarchy; each palette owns its hue. */
+html:root[data-theme='dark'] {--bg:#090c14;--bg-panel:#111725;--bg-card:#1b2334;--bg-card-2:#263148;--bg-input:#101726;--fg:#f2f5ff;--fg-dim:#c1cce0;--fg-faint:#a2b1cd;--border:#61769b66;--border-strong:#879bca99;--accent:#b299ff;--accent-2:#79d4f0;--focus:#bba9ff;}
+html:root[data-theme='mint'] {--bg:#051415;--bg-panel:#0b2325;--bg-card:#143335;--bg-card-2:#204547;--bg-input:#0b2326;--fg:#effff9;--fg-dim:#c0ddd3;--fg-faint:#9ac5ba;--border:#67b6a76b;--border-strong:#75d3bd99;--accent:#57edc6;--accent-2:#6dd9e0;--focus:#77fbdc;}
+html:root[data-theme='cyberpunk'] {--bg:#10051b;--bg-panel:#1d0e2c;--bg-card:#2d1742;--bg-card-2:#402358;--bg-input:#1a0c29;--fg:#fff2ff;--fg-dim:#e1c5f1;--fg-faint:#cba7e0;--border:#b477c56b;--border-strong:#d497eb99;--accent:#f4b6fb;--accent-2:#73e6f0;--focus:#73e6f0;}
+html:root[data-theme='colorful'] {--bg:#0c142c;--bg-panel:#142544;--bg-card:#213c60;--bg-card-2:#304f76;--bg-input:#142743;--fg:#f6f8ff;--fg-dim:#c8dafa;--fg-faint:#adc7ea;--border:#7a9fd175;--border-strong:#9ebbe6a8;--accent:#ffacd7;--accent-2:#ffe17e;--focus:#ffe17e;}
+html:root[data-theme='burnt-orange'] {--bg:#180c08;--bg-panel:#29170f;--bg-card:#422619;--bg-card-2:#5b3724;--bg-input:#27160f;--fg:#fff6e9;--fg-dim:#edcfb2;--fg-faint:#d8b08e;--border:#bd875e75;--border-strong:#e4a36ba8;--accent:#ffba70;--accent-2:#ffe09a;--focus:#ffca8e;}
+html:root[data-theme='studio'] {--bg-card:#f8faff;--bg-card-2:#e6edf9;--bg-input:#ffffffcf;--fg:#17213f;--fg-dim:#435575;--fg-faint:#526483;--border:#718ab754;--border-strong:#607ca58c;--accent:#086c65;--accent-2:#6550b0;}
+
+html:root[data-theme]:not([data-theme='studio']) .yue2-app {background:radial-gradient(ellipse at 70% 0,color-mix(in srgb,var(--accent) 7%,transparent),transparent 60%),var(--bg);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app header.topbar {background:var(--bg-panel);border-color:var(--border);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .left-sidebar {background:linear-gradient(180deg,var(--bg-panel),var(--bg));border-color:var(--border);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .side-nav button,
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .side-nav a {color:var(--fg-dim);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .side-nav button.active {background:linear-gradient(110deg,var(--accent),color-mix(in srgb,var(--accent) 65%,var(--accent-2)));color:var(--bg);box-shadow:0 4px 16px color-mix(in srgb,var(--accent) 15%,transparent);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .side-nav button.active svg {color:inherit;}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .quick-style {background:var(--bg-card);border-color:var(--border);color:var(--fg);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .quick-style small,
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .sidebar-label {color:var(--fg-dim);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .add-style {background:var(--bg-card-2);border-color:var(--border-strong);color:var(--fg);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .status-pill {background:var(--bg-card);border-color:var(--border);color:var(--accent);}
+html:root[data-theme] .yue2-app .brand-version {color:var(--accent);border-color:var(--border-strong);}
+html:root[data-theme] .yue2-app .volume,
+html:root[data-theme] .yue2-app .settings-shortcut {color:var(--fg-dim);}
+html:root[data-theme] .yue2-app .volume input[type='range'] {accent-color:var(--accent);}
+
+html:root[data-theme] .yue2-app .request-form {gap:18px;}
+html:root[data-theme] .yue2-app .request-form > .card,
+html:root[data-theme] .yue2-app .studio-rail > .rail-card,
+html:root[data-theme] .yue2-app .song-list > .card {
+ border:1px solid var(--border-strong);border-radius:18px;
+ box-shadow:0 8px 22px #00000020,inset 0 1px 0 #ffffff0a;
+}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form > .card,
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .studio-rail > .rail-card,
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .song-list > .card {
+ background:linear-gradient(125deg,color-mix(in srgb,var(--bg-card) 93%,var(--accent)),var(--bg-card));
+}
+html:root[data-theme] .yue2-app .studio-rail {gap:16px;}
+html:root[data-theme] .yue2-app .request-form > .card {--section-accent:var(--accent);border-top:3px solid var(--section-accent);}
+html:root[data-theme] .yue2-app .request-form > .producer {--section-accent:var(--accent-2);}
+html:root[data-theme] .yue2-app .request-form > .words-card {--section-accent:color-mix(in srgb,var(--accent) 40%,var(--accent-2));}
+html:root[data-theme] .yue2-app .request-form > .engine-card {--section-accent:var(--accent-2);}
+html:root[data-theme] .yue2-app .request-form .card-head h3,
+html:root[data-theme] .yue2-app .request-form .heading h3 {color:var(--fg);font-size:16px;letter-spacing:0;font-weight:700;}
+html:root[data-theme] .yue2-app .request-form .sound-card > .card-head h3 {font-size:20px;}
+html:root[data-theme] .yue2-app .request-form .card-head,
+html:root[data-theme] .yue2-app .request-form .producer > .heading {padding-bottom:10px;border-bottom:1px solid var(--border);gap:10px;}
+html:root[data-theme] .yue2-app .rail-card-heading {padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:12px;}
+html:root[data-theme] .yue2-app .rail-card-heading h2 {font-size:16px;color:var(--fg);}
+html:root[data-theme] .yue2-app .request-form .field-name {color:var(--fg);font-size:12px;}
+html:root[data-theme] .yue2-app .request-form .help-text,
+html:root[data-theme] .yue2-app .request-form .section-meta,
+html:root[data-theme] .yue2-app .request-form .mixer-help,
+html:root[data-theme] .yue2-app .request-form .field-name small {color:var(--fg-dim);font-size:11px;line-height:1.5;}
+html:root[data-theme] .yue2-app .request-form input:not([type='range']):not([type='checkbox']),
+html:root[data-theme] .yue2-app .request-form select,
+html:root[data-theme] .yue2-app .request-form textarea {background:var(--bg-input);border:1px solid var(--border-strong);color:var(--fg);font-size:12px;}
+html:root[data-theme] .yue2-app input::placeholder,
+html:root[data-theme] .yue2-app textarea::placeholder {color:var(--fg-faint);opacity:1;}
+html:root[data-theme] .yue2-app .request-form .planner-group,
+html:root[data-theme] .yue2-app .request-form .music-mixer,
+html:root[data-theme] .yue2-app .request-form .style-mixer,
+html:root[data-theme] .yue2-app .request-form .writer-disclosure,
+html:root[data-theme] .yue2-app .request-form .duration-auto,
+html:root[data-theme] .yue2-app .request-form .score-editor,
+html:root[data-theme] .yue2-app .request-form .engine-mode,
+html:root[data-theme] .yue2-app .request-form .engine-metrics {background:var(--bg-input);border-color:var(--border);color:var(--fg);border-radius:12px;}
+html:root[data-theme] .yue2-app .request-form .planner-group h4 {color:var(--accent);}
+html:root[data-theme] .yue2-app .request-form .toolbar .tool-btn,
+html:root[data-theme] .yue2-app .request-form .engine-mode button {background:var(--bg-card-2);border-color:var(--border-strong);color:var(--fg);}
+html:root[data-theme] .yue2-app .request-form .engine-mode button.selected {background:color-mix(in srgb,var(--accent) 18%,var(--bg-card-2));border-color:var(--accent);color:var(--fg);}
+html:root[data-theme] .yue2-app .request-form > #arrangement-workbench > .card-head,
+html:root[data-theme] .yue2-app .request-form > #score-sampling > summary,
+html:root[data-theme] .yue2-app .request-form > #semantic-sampling > summary,
+html:root[data-theme] .yue2-app .request-form > #render-workbench > summary {
+ background:color-mix(in srgb,var(--accent) 12%,var(--bg-card-2));color:var(--fg);font-size:13px;border-bottom:1px solid var(--border-strong);min-height:42px;
+}
+html:root[data-theme] .yue2-app .request-form > #semantic-sampling > summary {background:color-mix(in srgb,var(--accent-2) 14%,var(--bg-card-2));}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .desk-nav {background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;padding:8px;}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .desk-nav a {background:var(--bg-card);border:1px solid var(--border);border-radius:10px;}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .desk-nav .step-copy strong {color:var(--fg);font-size:12px;}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .desk-nav .step-copy small {color:var(--fg-dim);font-size:10px;}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .desk-nav a > span:first-child {background:var(--bg-card-2);color:var(--accent);border-color:var(--border-strong);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .action-bar {padding:10px;background:var(--bg-card-2);border:1px solid var(--border-strong);box-shadow:0 -5px 25px #0003;}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .action-bar .generate-btn,
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .generate-lyrics {background:linear-gradient(110deg,var(--accent),color-mix(in srgb,var(--accent) 60%,var(--accent-2)));color:var(--bg);border-color:var(--accent);box-shadow:0 5px 18px color-mix(in srgb,var(--accent) 15%,transparent);}
+html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .action-bar .ghost-btn {background:var(--bg-input);color:var(--fg);border-color:var(--border-strong);}
+html:root[data-theme] .yue2-app .recent-info strong,
+html:root[data-theme] .yue2-app .preview-track-title strong,
+html:root[data-theme] .yue2-app .rail-setting strong {color:var(--fg);}
+html:root[data-theme] .yue2-app .recent-info small,
+html:root[data-theme] .yue2-app .rail-setting span {color:var(--fg-dim);}
+html:root[data-theme] .yue2-app .recent-track {border:1px solid var(--border);background:var(--bg-input);}
+html:root[data-theme] .yue2-app .song-list .wave-wrap {background:var(--bg-input);border-color:var(--border-strong);}
+html:root[data-theme] .yue2-app .style-chip.lyric {color:var(--fg-dim);border-color:var(--border-strong);}
+html:root[data-theme] .yue2-app :focus-visible {outline:2px solid var(--focus);outline-offset:3px;}
+@media(max-width:680px) {
+ html:root[data-theme] .yue2-app .request-form .card-head h3 {font-size:14px;}
+ html:root[data-theme] .yue2-app .request-form .card-head {flex-wrap:wrap;}
+ html:root[data-theme]:not([data-theme='studio']) .yue2-app .request-form .desk-nav {gap:5px;}
+}

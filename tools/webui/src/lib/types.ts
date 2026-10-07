@@ -30,6 +30,7 @@ export interface Yue2Request {
 	output_format?: string;
 	peak_clip?: number;
 	mp3_bitrate?: number;
+	mastering_profile?: string;
 }
 
 // GET /props response
@@ -45,11 +46,28 @@ export interface Yue2Props {
 
 // what we store in IndexedDB per song
 export interface Song {
+	mediaRevision?: number;
+	videoRevision?: number;
+	videoVersion?: string;
+	videoOutdated?: boolean;
+	artworkJobId?: string;
+	videoJobId?: string;
+	youtubeDraft?: import('./youtube.js').YouTubeDraft;
+	takeGroup?: string;
+	sourceJob?: string;
+	sourceIndex?: number;
 	id?: number;
 	name: string;
 	format: string;
 	created: number;
 	style: string;
+	// style profiles blended for this song (ids into music_styles/ plus their
+	// weights), snapshotted at generation so the card can name them. Absent
+	// on older records, imports and remixes, which fall back to the style prompt.
+	musicStyles?: { id: string; weight: number }[];
+	// lyric engines blended for this song (ids into lyric_styles/ plus their
+	// weights), snapshotted alongside the music blend. Same fallback rules.
+	lyricStyles?: { id: string; weight: number }[];
 	seed: number; // the LM seed, the one that decides which song it is
 	// length of the audio in seconds, decoded once and cached with the peaks
 	duration: number;
@@ -57,6 +75,16 @@ export interface Song {
 	score: string;
 	request: Yue2Request;
 	audio: Blob;
+	originalAudio?: Blob;
+	// Mix before the last vocal-balance operation, retained for A/B playback.
+	vocalOriginalAudio?: Blob;
+	// Optional decoded-audio artwork. Stored as a Blob, never a temporary URL.
+	artwork?: Blob;
+	albumId?: string;
+	albumTitle?: string;
+	albumTrackId?: string;
+	trackNumber?: number;
+	video?: Blob;
 	// user-marked favorite, persisted across reloads. Acts as a sticky
 	// flag for the bulk "Delete non-favorites" action.
 	favorite?: boolean;

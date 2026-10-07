@@ -1,0 +1,37 @@
+name: Studio checks
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  studio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tools/webui/package-lock.json
+      - run: npm ci
+        working-directory: tools/webui
+      - run: npm ci
+        working-directory: tools/youtube-agent
+      - run: npm run check
+        working-directory: tools/webui
+      - run: node --experimental-strip-types --test tests/*.test.mjs
+        working-directory: tools/webui
+      - run: npm test
+        working-directory: tools/youtube-agent
+      - run: npm run build
+        working-directory: tools/webui
+      - run: npx playwright install --with-deps chromium
+        working-directory: tools/youtube-agent
+      - run: node tests/studio-interactions.mjs
+      - run: node tests/workflow-browser.mjs
+      - run: node tests/archive-native.mjs
+      - run: node tools/webui/tests/storage-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: studio-review
+          path: build/ui-review

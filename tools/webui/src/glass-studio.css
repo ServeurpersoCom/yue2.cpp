@@ -1,0 +1,172 @@
+/* Reference-inspired presentation. All controls keep their existing handlers. */
+.creation-heading { display:none; }
+.style-explanation {position:fixed;z-index:1000;box-sizing:border-box;overflow:auto;padding:18px 20px;background:var(--bg-card-2);color:var(--fg);border:1px solid var(--border-strong);border-radius:16px;box-shadow:0 16px 48px #0006;font-family:inherit;line-height:1.5;overscroll-behavior:contain;}
+.style-explanation h4 {font-size:17px;margin:0 0 4px;color:var(--fg);}
+.style-explanation p {font-size:12px;margin:3px 0 10px;color:var(--fg-dim);}
+.style-explanation strong {display:block;font-size:11px;color:var(--accent);margin-top:9px;}
+.style-explanation .style-explanation-meta {font-size:11px;color:var(--accent);}
+.style-explanation .style-explanation-intro {font-size:13px;color:var(--fg);padding:9px 0;border-bottom:1px solid var(--border);}
+/* Keep the planner before lyrics in the legacy grid layouts as well. */
+.yue2-app .request-form > .producer {grid-column:1/-1;grid-row:3!important}
+.yue2-app .request-form > .words-card {grid-row:4!important}
+.yue2-app .request-form > #arrangement-workbench {grid-row:5!important}
+.yue2-app .request-form > #score-sampling,.yue2-app .request-form > #semantic-sampling {grid-row:6!important}
+.yue2-app .request-form > .engine-card {grid-row:7!important}
+.yue2-app .request-form > #render-workbench {grid-row:8!important}
+.yue2-app .request-form > .action-bar {grid-row:9!important}
+.rail-artwork .art-cover { width:100%; height:auto; aspect-ratio:16/11; }
+html:root[data-theme='studio'] {
+  color-scheme:light;
+  --bg:#eff3fd; --bg-panel:#e9eef9; --bg-card:#ffffffb8; --bg-card-2:#edf1fc;
+  --bg-input:#f7f9ffb8; --bg-btn:#e5eafa; --bg-btn-hover:#d4ddf5;
+  --fg:#17213f; --fg-dim:#526384; --fg-faint:#657490;
+  --border:#839acb38; --border-strong:#879dcd70;
+  --accent:#087e76; --accent-2:#4c64d9; --focus:#6154c7;
+  --accent-grad:linear-gradient(120deg,#25cdb2,#54afd4 60%,#9b74e5);
+  --ok:#087f69; --error:#ba304f; --waveform-dim:#bbc4dd; --waveform-play:#9364e9; --waveform-range:#1b9cba;
+  --radius:20px; --shadow:0 12px 35px #4b589b12;
+}
+html[data-theme='studio'] .yue2-app {
+  background:radial-gradient(ellipse at 33% 2%,#ece1ff 0,transparent 42%),radial-gradient(ellipse at 95% 28%,#c8efff 0,transparent 45%),radial-gradient(ellipse at 50% 96%,#ffe3d4 0,transparent 36%),#eef3fd;
+}
+html[data-theme='studio'] .yue2-app header.topbar {
+  background:#ffffff48; border-bottom:1px solid #fff9; backdrop-filter:blur(22px); padding-inline:24px;
+}
+html[data-theme='studio'] .yue2-app .brand-name {color:#222b51;font-size:20px}
+html[data-theme='studio'] .yue2-app .brand-mark {background:linear-gradient(140deg,#4ce8d4,#9e8bf9);box-shadow:0 5px 20px #8f89e342}
+html[data-theme='studio'] .yue2-app .status-pill {background:#ffffff7a;color:var(--ok);border-color:#96c9c253}
+html[data-theme='studio'] .yue2-app .topbar-theme select {background:#f5f8ffad;color:var(--fg);border:1px solid var(--border);border-radius:24px;width:145px}
+html[data-theme='studio'] .studio-frame {grid-template-columns:210px minmax(0,1fr)}
+html[data-theme='studio'] .left-sidebar {
+  background:radial-gradient(ellipse at 5% 0,#39315c,transparent 60%),linear-gradient(170deg,#1c2039,#142337);
+  border-right:1px solid #ffffff21;padding:22px 14px;color:#f2f3ff;
+}
+html[data-theme='studio'] .side-nav {gap:6px}
+html[data-theme='studio'] .side-nav button,html[data-theme='studio'] .side-nav a {color:#e3e7fa;min-height:43px;font-size:13px;border-radius:13px}
+html[data-theme='studio'] .side-nav button.active {background:linear-gradient(110deg,#8beae9,#9fa8f7 60%,#c88af0);color:#142342;box-shadow:0 3px 20px #91b9fc35;border:1px solid #dbe3ff7a}
+html[data-theme='studio'] .side-nav button:hover,html[data-theme='studio'] .side-nav a:hover {background-color:#ffffff14}
+html[data-theme='studio'] .side-count {background:#c4c3ff25;color:inherit}
+html[data-theme='studio'] .left-sidebar .sidebar-label {color:#bec6e7;font-size:11px;letter-spacing:.09em}
+html[data-theme='studio'] .quick-style-block {border-color:#ffffff20;margin-top:20px;padding-top:16px}
+html[data-theme='studio'] .quick-style {height:62px;border-bottom:1px solid #ffffff0b;color:#f3f4ff}
+html[data-theme='studio'] .quick-style strong {color:#edf1ff;font-size:12px}
+html[data-theme='studio'] .quick-style small {color:#a7b4d4;font-size:10px}
+html[data-theme='studio'] .quick-art {width:46px;height:46px;border-radius:11px;border:1px solid #c7cbef40}
+html[data-theme='studio'] .add-style {color:#ced8ee;background:#ffffff08;border-color:#ffffff30;border-radius:12px}
+html[data-theme='studio'] .yue2-app main.workspace-main {grid-template-columns:minmax(0,1fr) 300px;gap:18px;padding:22px 20px 20px}
+html[data-theme='studio'] .center-scroll {padding-right:6px;scrollbar-width:thin;scrollbar-color:#b4bddb transparent}
+html[data-theme='studio'] .yue2-app .request-form {display:flex;flex-direction:column;align-items:stretch;gap:18px;padding:0 0 12px}
+html[data-theme='studio'] .creation-heading {display:block;padding:0 8px 0}
+html[data-theme='studio'] .creation-heading h1 {font-size:clamp(27px,3vw,42px);letter-spacing:-.045em;line-height:1.15;color:#151b3a;font-weight:760}
+html[data-theme='studio'] .creation-heading p {font-size:15px;color:#58688a;margin-top:6px}
+html[data-theme='studio'] .yue2-app .request-form .desk-nav {position:relative;top:auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:8px 0 6px;background:transparent;overflow:visible;isolation:isolate}
+html[data-theme='studio'] .desk-nav::before {content:'';position:absolute;inset:43% 4% 33%;background:linear-gradient(90deg,#67e4d4,#b597f5,#ffbc8e,#7acfff);z-index:-1;filter:blur(6px);opacity:.7}
+html[data-theme='studio'] .yue2-app .request-form .desk-nav a {flex-direction:column;justify-content:center;text-align:center;gap:9px;min-width:0;padding:15px 6px;border-radius:48px;border:1px solid #ffffffa8;background:linear-gradient(140deg,#bcffe0,#7eebdd);box-shadow:inset 0 1px 12px #ffffff50,0 8px 24px #4e729016;color:#102a37}
+html[data-theme='studio'] .yue2-app .request-form .desk-nav a:nth-child(2) {background:linear-gradient(140deg,#d4c0ff,#b48cec)}
+html[data-theme='studio'] .yue2-app .request-form .desk-nav a:nth-child(3) {background:linear-gradient(140deg,#ffd7a2,#ffab82)}
+html[data-theme='studio'] .yue2-app .request-form .desk-nav a:nth-child(4) {background:linear-gradient(140deg,#b3e5ff,#66b9f7)}
+html[data-theme='studio'] .yue2-app .request-form .desk-nav a > span:first-child {width:38px;height:38px;flex-basis:38px;border-radius:50%;font-size:16px;color:#173149;background:#ffffff73;box-shadow:0 5px 12px #2d41651a}
+html[data-theme='studio'] .yue2-app .request-form .desk-nav .step-copy strong {font-size:15px;color:#162443}
+html[data-theme='studio'] .yue2-app .request-form .desk-nav .step-copy small {font-size:11px;color:#283c58}
+html[data-theme='studio'] .yue2-app .request-form .card {padding:20px;border-radius:22px;background:linear-gradient(125deg,#ffffffb8,#e5edfaad);border:1px solid #ffffffc9;box-shadow:0 10px 32px #5c639914,inset 0 1px 0 #fff;gap:16px}
+html[data-theme='studio'] .yue2-app .request-form .sound-card {background:radial-gradient(ellipse at 0 0,#b5e8dfaa,transparent 62%),linear-gradient(135deg,#d0d8efb8,#e5effab8);border-color:#fff9}
+html[data-theme='studio'] .yue2-app .request-form .card-head h3 {font-size:16px;letter-spacing:-.02em;color:#263555}
+html[data-theme='studio'] .yue2-app .request-form .sound-card > .card-head h3 {font-size:21px;color:#263555}
+html[data-theme='studio'] .yue2-app .request-form .toolbar .tool-btn {background:#ffffff63;color:#2c3a5c;border-color:#ffffffa0;border-radius:10px;font-size:11px}
+html[data-theme='studio'] .sound-direction-grid {grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:18px}
+html[data-theme='studio'] .preset-column {grid-column:1;grid-row:1}
+html[data-theme='studio'] .brief-column {grid-column:2;grid-row:1;padding:13px;border-radius:17px;background:#ffffff50;border:1px solid #ffffff60;gap:14px}
+html[data-theme='studio'] .yue2-app .request-form .sound-direction-grid input {height:38px!important;padding:8px 11px!important;font-size:12px}
+html[data-theme='studio'] .yue2-app .request-form .preset-discovery {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-height:300px;overflow-y:auto;overflow-x:hidden;gap:9px;padding:5px;cursor:auto;scrollbar-width:thin;scrollbar-color:#abb8db transparent}
+html[data-theme='studio'] .yue2-app .request-form .preset-discovery button.style-tile {display:flex;min-height:116px;padding:0;position:relative;overflow:hidden;border-radius:13px;border:1px solid #fff7;justify-content:flex-end;text-align:left;isolation:isolate;background:#182437;transition:transform .15s,box-shadow .15s}
+html[data-theme='studio'] .yue2-app .request-form .preset-discovery button.style-tile img {position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:0;z-index:-2}
+html[data-theme='studio'] .style-tile::after {content:'';position:absolute;inset:25% 0 0;background:linear-gradient(transparent,#111730ed);z-index:-1;pointer-events:none}
+html[data-theme='studio'] .yue2-app .request-form .preset-discovery .style-tile-copy {padding:25px 8px 9px;color:white}
+html[data-theme='studio'] .yue2-app .request-form .preset-discovery .style-tile-copy strong {font-size:11px;color:white;line-height:1.3}
+html[data-theme='studio'] .yue2-app .request-form .preset-discovery button.chosen {border-color:#66ffe1;box-shadow:0 0 0 2px #5be8c8,0 4px 12px #19b39240}
+html[data-theme='studio'] .yue2-app .request-form .preset-discovery .style-tile-add {width:22px;height:22px;background:#c0ffeb;color:#145547;font-size:15px;top:7px;right:7px}
+html[data-theme='studio'] .selected-style-slot {min-height:133px;background:#ffffff65;border-color:#afbcdc66;border-radius:12px;padding:6px;gap:5px}
+html[data-theme='studio'] .selected-style-slot img {width:100%;height:65px;object-fit:cover;border-radius:8px}
+html[data-theme='studio'] .selected-style-slot strong {font-size:10px;color:#243758}
+html[data-theme='studio'] .selected-style-slot small {color:#536789}
+html[data-theme='studio'] .empty-style-slot {background:#e6edfa50;border:1px dashed #8499be}
+html[data-theme='studio'] .track-name-row {flex-direction:column;align-items:stretch;font-size:12px}
+html[data-theme='studio'] .blend-disclosure {padding:12px;border:1px solid #ffffff90;border-radius:13px;background:#ffffff45}
+html[data-theme='studio'] .blend-disclosure > summary {font-size:12px;color:#2a3c5c}
+html[data-theme='studio'] .yue2-app input:not([type='range']):not([type='checkbox']),html[data-theme='studio'] .yue2-app textarea,html[data-theme='studio'] .yue2-app select {background:var(--bg-input);color:var(--fg);border-color:var(--border-strong);border-radius:9px}
+html[data-theme='studio'] .yue2-app input::placeholder,html[data-theme='studio'] .yue2-app textarea::placeholder {color:#6a7894}
+html[data-theme='studio'] .yue2-app input[type='range'] {accent-color:#13b99b}
+html[data-theme='studio'] .yue2-app .request-form > .words-card {padding:0;background:linear-gradient(120deg,#efe7ffcc,#f5f5ffad)}
+html[data-theme='studio'] .yue2-app .request-form > .words-card > summary {padding:18px 20px}
+html[data-theme='studio'] .yue2-app .request-form .engine-card {background:linear-gradient(120deg,#d9efffcc,#edf5ffcc)}
+html[data-theme='studio'] .yue2-app .request-form #arrangement-workbench {background:linear-gradient(120deg,#ffedddcc,#f5f1ffcc)}
+html[data-theme='studio'] .yue2-app .request-form .action-bar {border:1px solid #c4d1fa;padding:16px;border-radius:22px;background:linear-gradient(115deg,#373b60ed,#455e80ed);backdrop-filter:blur(16px);box-shadow:0 10px 35px #363a6133}
+html[data-theme='studio'] .yue2-app .request-form .action-bar .generate-btn {border-radius:14px;min-height:50px;background:linear-gradient(100deg,#74ffe0,#5de8ed);color:#102d3e;box-shadow:0 0 20px #45edcf35}
+html[data-theme='studio'] .yue2-app .request-form .action-bar .ghost-btn {background:#ffffff18;color:#ecf2ff;border-color:#c6d4f24d;border-radius:12px}
+html[data-theme='studio'] .studio-rail {gap:14px}
+html[data-theme='studio'] .yue2-app .studio-rail > .rail-card {background:linear-gradient(140deg,#ffffffc9,#f3f7ffb3);border:1px solid #bdcfee6b;border-radius:20px;box-shadow:0 8px 28px #5066910d;padding:16px}
+html[data-theme='studio'] .rail-card-heading h2 {color:#182741;font-size:17px}
+html[data-theme='studio'] .rail-kicker {color:#657799;letter-spacing:.1em}
+html[data-theme='studio'] .preview-expand {background:#e4eafb;color:#34436a;border-color:#c7d0e6;border-radius:8px}
+html[data-theme='studio'] .preview-empty {min-height:165px;border:1px solid #fff9;border-radius:15px;background:radial-gradient(ellipse at 18% 20%,#8af2d4,transparent 60%),radial-gradient(ellipse at 90% 80%,#b795f2,transparent 65%),linear-gradient(145deg,#d8dfff,#bce5f9);color:#243b60}
+html[data-theme='studio'] .preview-empty small {color:#526487}
+html[data-theme='studio'] .preview-track-title strong {color:#182744;font-size:17px}
+html[data-theme='studio'] .preview-track-title span {color:#63728d}
+html[data-theme='studio'] .preview-player {background:#edf0fc;border-color:#cfd8ec;border-radius:16px}
+html[data-theme='studio'] .preview-play {background:linear-gradient(140deg,#c0daff,#d4c6ff);color:#263767;border:1px solid #bfcde8;box-shadow:0 4px 12px #7988bb26}
+html[data-theme='studio'] .rail-artwork {margin:12px 0}
+html[data-theme='studio'] .monitor-controls,html[data-theme='studio'] .output-summary {background:transparent;color:#263758}
+html[data-theme='studio'] .volume-dial {background:#e3eafa;border-color:#c4cee5;color:#253f61}
+html[data-theme='studio'] .recent-track {background:#ffffff48;border-color:#c7d1e742;border-radius:11px}
+html[data-theme='studio'] .recent-track strong,html[data-theme='studio'] .rail-setting strong {color:#263757}
+html[data-theme='studio'] .recent-track small,html[data-theme='studio'] .rail-setting span {color:#63728c}
+html[data-theme='studio'] .recent-play {background:#e1eaf9;color:#314e72;border-color:#c5d2eb}
+html[data-theme='studio'] .text-link {color:#7251bf}
+html[data-theme='studio'] .library-main {background:transparent}
+html[data-theme='studio'] .yue2-app .song-list > .card {background:linear-gradient(130deg,#ffffffc9,#eaf1ffb8);border-color:#bacbe260;border-radius:20px;box-shadow:0 7px 24px #7787b414}
+html[data-theme='studio'] .song-list .wave-wrap {background:#f3f6fcb0;border-color:#ccd5ec}
+html[data-theme='studio'] .yue2-app :focus-visible {outline:2px solid #6855c9;outline-offset:3px}
+html[data-theme='studio'] .yue2-app .quick-style {background:#ffffff06;border:1px solid #ffffff08}
+html[data-theme='studio'] .yue2-app .quick-style:hover {background:#ffffff12}
+html[data-theme='studio'] .yue2-app .request-form .field-name {color:#2a3b5c}
+html[data-theme='studio'] .yue2-app .request-form .help-text,
+html[data-theme='studio'] .yue2-app .request-form .section-meta,
+html[data-theme='studio'] .yue2-app .request-form .mixer-help {color:#576889}
+html[data-theme='studio'] .yue2-app .request-form .music-mixer,
+html[data-theme='studio'] .yue2-app .request-form .style-mixer,
+html[data-theme='studio'] .yue2-app .request-form .writer-disclosure,
+html[data-theme='studio'] .yue2-app .request-form .score-editor,
+html[data-theme='studio'] .yue2-app .request-form .duration-auto,
+html[data-theme='studio'] .yue2-app .request-form .engine-mode,
+html[data-theme='studio'] .yue2-app .request-form .engine-metrics,
+html[data-theme='studio'] .yue2-app .request-form .collapsible {background:#f6f8ffad;border-color:#b3c3df70;color:#2d405f}
+html[data-theme='studio'] .yue2-app .request-form .engine-mode button {color:#4c6080}
+html[data-theme='studio'] .yue2-app .request-form .engine-mode button.selected {background:#c9f0e8;color:#185349;border-color:#7ecabc}
+html[data-theme='studio'] .yue2-app .request-form .collapsible > summary {background:#e6e9fb;color:#2b3a61}
+html[data-theme='studio'] .yue2-app .request-form #render-workbench > summary {background:#f5e3eb}
+html[data-theme='studio'] .yue2-app .request-form #semantic-sampling > summary {background:#ddedf9}
+html[data-theme='studio'] .yue2-app .request-form #score-sampling > summary {background:#dcefe8;color:#254e46}
+html[data-theme='studio'] .yue2-app .request-form #semantic-sampling > summary {color:#284561}
+html[data-theme='studio'] .yue2-app .request-form > #arrangement-workbench > .card-head {background:#e8dff4;margin:0 -20px;padding:12px 20px}
+html[data-theme='studio'] .yue2-app .request-form .producer {color:#293a5a}
+html[data-theme='studio'] .yue2-app .request-form .action-bar {width:100%}
+html[data-theme='studio'] ::-webkit-scrollbar-thumb {background:#aebbd5;border-color:transparent}
+@media(min-width:1550px) {html[data-theme='studio'] .yue2-app main.workspace-main {grid-template-columns:minmax(0,1fr) 330px}html[data-theme='studio'] .yue2-app .request-form .preset-discovery {grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:1200px) {html[data-theme='studio'] .studio-frame {grid-template-columns:165px minmax(0,1fr)}html[data-theme='studio'] .yue2-app main.workspace-main {gap:12px;padding:16px 12px;grid-template-columns:minmax(0,1fr) 260px}html[data-theme='studio'] .sound-direction-grid {grid-template-columns:1fr}html[data-theme='studio'] .brief-column {grid-column:1;grid-row:2}html[data-theme='studio'] .yue2-app .request-form .preset-discovery {grid-template-columns:repeat(4,minmax(0,1fr));max-height:270px}}
+@media(max-width:1000px) {html[data-theme='studio'] .yue2-app main.workspace-main {display:flex}html[data-theme='studio'] .yue2-app .request-form .preset-discovery {grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:680px) {
+  html[data-theme='studio'] .left-sidebar {padding:7px 8px;background:#22283f}
+  html[data-theme='studio'] .side-nav button,html[data-theme='studio'] .side-nav a {min-height:36px;font-size:11px}
+  html[data-theme='studio'] .yue2-app header.topbar {padding-inline:10px}
+  html[data-theme='studio'] .yue2-app .topbar-theme select {width:115px}
+  html[data-theme='studio'] .yue2-app main.workspace-main {padding:14px 10px}
+  html[data-theme='studio'] .yue2-app .request-form .desk-nav {gap:6px;grid-template-columns:repeat(4,minmax(0,1fr))}
+  html[data-theme='studio'] .yue2-app .request-form .desk-nav a {min-height:92px;border-radius:25px;padding:10px 4px;gap:6px}
+  html[data-theme='studio'] .yue2-app .request-form .desk-nav .step-copy strong {font-size:11px}
+  html[data-theme='studio'] .yue2-app .request-form .card {padding:14px;border-radius:18px}
+  html[data-theme='studio'] .yue2-app .request-form .sound-card > .card-head {flex-wrap:wrap;gap:10px}
+  html[data-theme='studio'] .yue2-app .request-form .sound-card > .card-head h3 {font-size:18px}
+  html[data-theme='studio'] .yue2-app .request-form .toolbar {margin-left:0}
+  html[data-theme='studio'] .yue2-app .request-form .preset-discovery {grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(prefers-reduced-motion:reduce) {html[data-theme='studio'] *,html[data-theme='studio'] *::before,html[data-theme='studio'] *::after {animation:none!important;scroll-behavior:auto!important;transition:none!important}}

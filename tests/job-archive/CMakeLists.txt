@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(job_archive_test LANGUAGES CXX)
+add_executable(job-archive-test main.cpp)
+target_compile_features(job-archive-test PRIVATE cxx_std_17)
+target_include_directories(job-archive-test PRIVATE ../../src)
+if(MSVC)
+ target_compile_options(job-archive-test PRIVATE /EHsc)
+endif()

@@ -69,6 +69,7 @@ struct Yue2Request {
     // MP3 encoder bitrate in kbps, used when output_format is "mp3".
     // WAV outputs ignore this field.
     int mp3_bitrate;  // 128
+    std::string mastering_profile;  // "off", "streaming" or "broadcast"
 };
 
 // fills every field with its default

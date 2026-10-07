@@ -6,6 +6,7 @@
 // to its position (same duration = same song variation).
 
 let ctx: AudioContext | null = null;
+let analyser: AnalyserNode | null = null;
 
 // shared AudioContext, created on first use
 export function getContext(): AudioContext {
@@ -13,6 +14,21 @@ export function getContext(): AudioContext {
 		ctx = new AudioContext();
 	}
 	return ctx;
+}
+
+// Shared playback output and live spectrum for the studio visualizer.
+// Every track's gain node feeds this analyser, which also feeds the speakers.
+export function getPlaybackAnalyser(): AnalyserNode {
+	const context = getContext();
+	if (!analyser) {
+		analyser = context.createAnalyser();
+		analyser.fftSize = 2048;
+		analyser.smoothingTimeConstant = 0.78;
+		analyser.minDecibels = -85;
+		analyser.maxDecibels = -12;
+		analyser.connect(context.destination);
+	}
+	return analyser;
 }
 
 // playing track registry for auto sync
@@ -24,17 +40,34 @@ interface PlayingTrack {
 
 const tracks = new Map<number, PlayingTrack>();
 let nextId = 0;
+const playbackListeners = new Set<(playing: boolean) => void>();
+
+function notifyPlayback() {
+	const playing = tracks.size > 0;
+	for (const listener of playbackListeners) listener(playing);
+}
+
+export function subscribePlayback(listener: (playing: boolean) => void): () => void {
+	playbackListeners.add(listener);
+	listener(tracks.size > 0);
+	return () => playbackListeners.delete(listener);
+}
 
 // register a playing track. returns id for unregister.
 export function registerPlaying(duration: number, getTime: () => number): number {
 	const id = nextId++;
 	tracks.set(id, { duration, getTime });
+	notifyPlayback();
 	return id;
 }
 
 // unregister a track when playback stops
 export function unregisterPlaying(id: number) {
-	tracks.delete(id);
+	if (tracks.delete(id)) notifyPlayback();
+}
+
+export function isPlaying(): boolean {
+	return tracks.size > 0;
 }
 
 // number of tracks currently playing (for volume division)

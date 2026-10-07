@@ -1,0 +1,50 @@
+import {chromium} from '../tools/youtube-agent/node_modules/playwright/index.mjs';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({...(process.env.CI?{}:{channel:'msedge'}),headless:true});
+const html=await readFile('tools/webui/dist/index.html');
+const wav=Buffer.alloc(32044);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(32000,40);
+const result=Buffer.concat([Buffer.from('--fixture\r\nContent-Type: application/json\r\n\r\n'+JSON.stringify({style:'Jazz Rap',abc_sampling:{},semantic_sampling:{}})+'\r\n--fixture\r\nContent-Type: audio/wav\r\n\r\n'),wav,Buffer.from('\r\n--fixture--\r\n')]);
+try{
+ const page=await browser.newPage(),errors=[],submitted=new Set();let done=false,presets=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{window.decodeCalls=0;const old=AudioContext.prototype.decodeAudioData;AudioContext.prototype.decodeAudioData=function(...args){window.decodeCalls++;return old.apply(this,args);};});
+ await page.route('**/*',route=>{const r=route.request(),u=new URL(r.url());
+  if(u.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
+  if(u.pathname==='/presets'){if(r.method()==='POST'){const p=r.postDataJSON();if(p.operation==='rename')presets=presets.filter(x=>x.name!==p.oldName);else presets=presets.filter(x=>x.name!==p.name);if(p.operation!=='delete')presets.push(p);}return route.fulfill({json:presets});}
+  if(u.pathname==='/synth'){const id=r.headers()['x-yue2-job-id'];submitted.add(id);return route.fulfill({json:{id}});}
+  if(u.pathname==='/job')return u.searchParams.has('result')?route.fulfill({contentType:'multipart/mixed; boundary=fixture',body:result}):route.fulfill({json:{status:done?'done':'running',durable:true}});
+  if(u.pathname==='/jobs')return route.fulfill({json:[]});
+  return route.fulfill({json:{status:'ok',models:[],defaults:{}}});
+ });
+ await page.goto('http://localhost:8087');await page.getByRole('heading',{name:'Create your song'}).waitFor();
+ await page.getByRole('button',{name:'Save preset',exact:true}).click();
+ await page.getByRole('dialog').getByLabel('Preset name').fill('Full setup check');
+ await page.getByRole('dialog').getByRole('button',{name:'Save full preset',exact:true}).click();
+ await page.getByRole('button',{name:'Load studio preset Full setup check'}).waitFor();
+ assert.equal(presets[0].kind,'studio');assert.ok(presets[0].data.configuration.producer);
+ await page.getByRole('button',{name:'Manage saved presets'}).click();
+ await page.getByRole('dialog').getByRole('button',{name:'Full setup check · Full Studio setup'}).click();
+ await page.getByRole('dialog').getByLabel('Preset name').fill('Renamed full setup');
+ await page.getByRole('dialog').getByRole('button',{name:'Save name'}).click();
+ await page.getByRole('button',{name:'Load studio preset Renamed full setup'}).waitFor();
+ await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+ await page.getByRole('button',{name:/^Library/}).click();
+ await page.getByRole('link',{name:'Shape your first track'}).click();await page.getByRole('heading',{name:'Create your song'}).waitFor();
+ await page.getByRole('button',{name:/^Library/}).click();
+ const albums=page.locator('#albums');await albums.getByLabel('Album title').fill('Recovery test');
+ await albums.getByLabel('Generate master cover').uncheck();await albums.getByLabel('Export MP4').uncheck();
+ await albums.locator('input[type=file]').setInputFiles([{name:'One.txt',mimeType:'text/plain',buffer:Buffer.from('[Verse]\nOne bright morning')},{name:'Two.txt',mimeType:'text/plain',buffer:Buffer.from('[Verse]\nTwo steps forward')}]);
+ await albums.getByRole('button',{name:'Generate album',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('#albums')?.textContent.includes('generating audio'));
+ await page.waitForTimeout(500);assert.equal(submitted.size,1);
+ await page.reload();await page.getByRole('button',{name:/^Library/}).click();done=true;
+ await albums.getByRole('button',{name:'Resume album',exact:true}).click();
+ await albums.getByRole('status').filter({hasText:'Album complete'}).waitFor({timeout:20000});assert.equal(submitted.size,2,'resume reuses first ID');assert.equal(await page.locator('.song-list .card').count(),2);
+ await page.evaluate(async bytes=>{const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('yue2-songs');q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});await new Promise((resolve,reject)=>{const tx=db.transaction('songs','readwrite');for(let i=0;i<120;i++)tx.objectStore('songs').add({name:'Stress '+i,created:i+100,format:'wav',duration:1,style:'Jazz Rap',seed:1,score:'',audio:new Blob([new Uint8Array(bytes)],{type:'audio/wav'}),peaks:[.2,.5,.3],request:{style:'Jazz Rap',abc_sampling:{},semantic_sampling:{}}});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();},[...wav]);
+ await page.reload();await page.getByRole('button',{name:/^Library/}).click();await page.waitForTimeout(1500);
+ assert.equal(await page.locator('.song-list .card').count(),12,'pagination bounds mounted cards');assert.equal(await page.evaluate(()=>window.decodeCalls),0,'cached peaks avoid eager audio decoding');
+ const metrics=await (await page.context().newCDPSession(page)).send('Runtime.getHeapUsage');assert.deepEqual(errors,[]);
+ await mkdir('build/ui-review',{recursive:true});await writeFile('build/ui-review/workflows.json',JSON.stringify({tracks:122,mountedCards:12,decodeCalls:0,heap:metrics,albumResume:'passed',pageErrors:errors},null,2));
+ console.log('PASS: empty-library navigation, two-track album reload/resume without duplicate submission, 122-track pagination, zero eager decoding for cached peaks.',metrics);
+}finally{await browser.close();}

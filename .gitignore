@@ -2,11 +2,24 @@ build/
 *.wav
 
 tests/*/
+!tests/job-archive/
 
 checkpoints/
 models/*.gguf
 __pycache__/
 node_modules/
+saved_presets/
+job_results/
 tools/webui/dist/
 training/datasets/
 training/checkpoints/
+
+# Local operational state and user media
+/tools/youtube-agent/profile/
+/tools/youtube-agent/runs/
+*.mp4
+/server*.log
+
+.venv-vocal/
+
+/pinokio_agent/

@@ -1,0 +1,7 @@
+{
+  "name": "yue2-youtube-agent",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node agent.mjs", "test": "node --test" },
+  "dependencies": { "playwright": "^1.58.0" }
+}
