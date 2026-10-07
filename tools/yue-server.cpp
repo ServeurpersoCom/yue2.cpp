@@ -418,6 +418,7 @@ static bool         g_keep_loaded = false;
 static std::string  g_model_path;
 static std::string  g_vae_path;
 static std::string  g_transcriber_path;
+static std::string  g_adapters_dir;
 
 static void on_signal(int) {
     active_job_cancel();
@@ -456,6 +457,24 @@ static void handle_props(const httplib::Request &, httplib::Response & res) {
 
     // The defaults are the request schema itself, serialized by the request
     // writer and grafted here: one source of truth, one float formatting
+    // adapters: what the adapter directory holds, rescanned per call so a
+    // file dropped in is usable without a restart
+    yyjson_mut_val * adapters = yyjson_mut_arr(doc);
+    for (const auto & e : adapter_scan(g_adapters_dir)) {
+        yyjson_mut_val * item = yyjson_mut_arr_add_obj(doc, adapters);
+        yyjson_mut_obj_add_strncpy(doc, item, "name", e.name.c_str(), e.name.size());
+        yyjson_mut_obj_add_bool(doc, item, "ok", e.info.ok);
+        yyjson_mut_obj_add_bool(doc, item, "ar", e.info.ar_keys > 0);
+        yyjson_mut_obj_add_bool(doc, item, "nar", e.info.nar_keys > 0);
+        if (!e.info.trigger.empty()) {
+            yyjson_mut_obj_add_strncpy(doc, item, "trigger", e.info.trigger.c_str(), e.info.trigger.size());
+        }
+        if (!e.info.error.empty()) {
+            yyjson_mut_obj_add_strncpy(doc, item, "error", e.info.error.c_str(), e.info.error.size());
+        }
+    }
+    yyjson_mut_obj_add_val(doc, root, "adapters", adapters);
+
     std::string  def_json = request_to_json(&d, false);
     yyjson_doc * def_doc  = yyjson_read(def_json.c_str(), def_json.size(), 0);
     if (def_doc) {
@@ -510,6 +529,13 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
     if (!yue2_sampling_valid(r->abc_sampling, "abc") || !yue2_sampling_valid(r->semantic_sampling, "semantic")) {
         res.status = 400;
         res.set_content(json_string("error", "sampling preset outside the protocol bounds"), "application/json");
+        return false;
+    }
+    std::vector<AdapterSpec> ar, nar;
+    std::string              adapter_error;
+    if (!pipeline_resolve_adapters(&g_pipeline, *r, &ar, &nar, &adapter_error)) {
+        res.status = 400;
+        res.set_content(json_string("error", adapter_error), "application/json");
         return false;
     }
     request_resolve_seed(r);
@@ -594,6 +620,7 @@ static void print_usage(const char * prog) {
             "\n"
             "Optional:\n"
             "  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe\n"
+            "  --adapters <dir>       Adapter directory, requests name its entries\n"
             "  --host <addr>          Listen address (default: 0.0.0.0)\n"
             "  --port <N>             Listen port (default: 8087)\n"
             "  --max-batch <N>        Song batch limit, one KV set each (default: 1)\n"
@@ -626,6 +653,8 @@ int main(int argc, char ** argv) {
             g_vae_path = argv[++i];
         } else if (!strcmp(argv[i], "--transcriber") && !last) {
             g_transcriber_path = argv[++i];
+        } else if (!strcmp(argv[i], "--adapters") && !last) {
+            g_adapters_dir = argv[++i];
         } else if (!strcmp(argv[i], "--host") && !last) {
             host = argv[++i];
         } else if (!strcmp(argv[i], "--port") && !last) {
@@ -665,6 +694,7 @@ int main(int argc, char ** argv) {
     // with --keep-loaded (everything accumulates)
     g_pipeline.store            = store_create(g_keep_loaded ? EVICT_NEVER : EVICT_STRICT);
     g_pipeline.transcriber_path = g_transcriber_path;
+    g_pipeline.adapters_dir     = g_adapters_dir;
     if (!pipeline_configure(&g_pipeline, g_model_path.c_str(), g_vae_path.c_str(), params)) {
         store_free(g_pipeline.store);
         return 1;

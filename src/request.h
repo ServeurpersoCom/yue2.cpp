@@ -7,8 +7,20 @@
 
 #include "sampling.h"
 
+#include <cmath>
 #include <cstdint>
 #include <string>
+#include <vector>
+
+// One adapter of a request, named as it sits in the server adapter directory.
+// scale applies to both halves, ar_scale and nar_scale override it for one
+// half when set, and a zero leaves that half untouched.
+struct Yue2RequestAdapter {
+    std::string name;
+    float       scale     = 1.0f;
+    float       ar_scale  = NAN;
+    float       nar_scale = NAN;
+};
 
 struct Yue2Request {
     // text content
@@ -69,6 +81,10 @@ struct Yue2Request {
     // MP3 encoder bitrate in kbps, used when output_format is "mp3".
     // WAV outputs ignore this field.
     int mp3_bitrate;  // 128
+
+    // adapters merged into the backbone for this request, applied in order.
+    // "adapter" and "adapter_scale" are read too, as a one entry list.
+    std::vector<Yue2RequestAdapter> adapters;  // []
 };
 
 // fills every field with its default

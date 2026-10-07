@@ -36,6 +36,7 @@ void request_init(Yue2Request * r) {
 
     r->output_format = OUTPUT_FORMAT_MP3;
     r->mp3_bitrate   = 128;
+    r->adapters.clear();
 }
 
 static inline std::string yy_str(yyjson_val * v) {
@@ -112,7 +113,7 @@ static void add_sampling(yyjson_mut_doc *     doc,
     }
 }
 
-static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
+static bool request_parse_obj(yyjson_val * obj, Yue2Request * r) {
     yyjson_val * v;
 
     if ((v = yyjson_obj_get(obj, "style")) && yyjson_is_str(v)) {
@@ -162,6 +163,44 @@ static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
     if ((v = yyjson_obj_get(obj, "mp3_bitrate")) && yyjson_is_int(v)) {
         r->mp3_bitrate = yyjson_get_int(v);
     }
+    if ((v = yyjson_obj_get(obj, "adapters")) && yyjson_is_arr(v)) {
+        size_t       idx, max;
+        yyjson_val * item;
+        yyjson_arr_foreach(v, idx, max, item) {
+            yyjson_val *       f;
+            Yue2RequestAdapter a;
+            if (yyjson_is_str(item) && yyjson_get_len(item) > 0) {
+                a.name = yy_str(item);
+                r->adapters.push_back(a);
+                continue;
+            }
+            if (!yyjson_is_obj(item) || !(f = yyjson_obj_get(item, "name")) || !yyjson_is_str(f) ||
+                yyjson_get_len(f) == 0) {
+                fprintf(stderr, "[Request] ERROR: an adapter needs a name\n");
+                return false;
+            }
+            a.name = yy_str(f);
+            if ((f = yyjson_obj_get(item, "scale")) && yyjson_is_num(f)) {
+                a.scale = (float) yyjson_get_num(f);
+            }
+            if ((f = yyjson_obj_get(item, "ar_scale")) && yyjson_is_num(f)) {
+                a.ar_scale = (float) yyjson_get_num(f);
+            }
+            if ((f = yyjson_obj_get(item, "nar_scale")) && yyjson_is_num(f)) {
+                a.nar_scale = (float) yyjson_get_num(f);
+            }
+            r->adapters.push_back(a);
+        }
+    }
+    if ((v = yyjson_obj_get(obj, "adapter")) && yyjson_is_str(v) && yyjson_get_len(v) > 0) {
+        Yue2RequestAdapter a;
+        a.name = yy_str(v);
+        if ((v = yyjson_obj_get(obj, "adapter_scale")) && yyjson_is_num(v)) {
+            a.scale = (float) yyjson_get_num(v);
+        }
+        r->adapters.push_back(a);
+    }
+    return true;
 }
 
 bool request_parse_json(Yue2Request * r, const char * json) {
@@ -177,8 +216,11 @@ bool request_parse_json(Yue2Request * r, const char * json) {
         yyjson_doc_free(doc);
         return false;
     }
-    request_parse_obj(root, r);
+    bool ok = request_parse_obj(root, r);
     yyjson_doc_free(doc);
+    if (!ok) {
+        return false;
+    }
     return true;
 }
 
@@ -195,8 +237,11 @@ bool request_parse(Yue2Request * r, const char * path) {
         yyjson_doc_free(doc);
         return false;
     }
-    request_parse_obj(root, r);
+    bool ok = request_parse_obj(root, r);
     yyjson_doc_free(doc);
+    if (!ok) {
+        return false;
+    }
     fprintf(stderr, "[Request] Parsed %s\n", path);
     return true;
 }
@@ -255,6 +300,21 @@ std::string request_to_json(const Yue2Request * r, bool sparse) {
     }
     if (!sparse || r->mp3_bitrate != d.mp3_bitrate) {
         yyjson_mut_obj_add_int(doc, root, "mp3_bitrate", r->mp3_bitrate);
+    }
+    if (!sparse || !r->adapters.empty()) {
+        yyjson_mut_val * arr = yyjson_mut_arr(doc);
+        for (const auto & a : r->adapters) {
+            yyjson_mut_val * item = yyjson_mut_arr_add_obj(doc, arr);
+            yyjson_mut_obj_add_strncpy(doc, item, "name", a.name.c_str(), a.name.size());
+            yyjson_mut_obj_add_real(doc, item, "scale", a.scale);
+            if (!std::isnan(a.ar_scale)) {
+                yyjson_mut_obj_add_real(doc, item, "ar_scale", a.ar_scale);
+            }
+            if (!std::isnan(a.nar_scale)) {
+                yyjson_mut_obj_add_real(doc, item, "nar_scale", a.nar_scale);
+            }
+        }
+        yyjson_mut_obj_add_val(doc, root, "adapters", arr);
     }
 
     char *      json = yyjson_mut_write(doc, WRITE_FLAGS, NULL);

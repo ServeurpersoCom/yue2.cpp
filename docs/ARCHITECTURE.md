@@ -495,6 +495,7 @@ the server rejects a request with neither.
     "peak_clip":       10,
     "output_format":   "mp3",
     "mp3_bitrate":     128,
+    "adapters":        [],
     "abc_sampling":      { "temperature": 0.7, "top_p": 0.9,  "top_k": 30,  "repetition_penalty": 1.005, "penalty_window": 100, "min_tokens": 32,  "max_tokens": 4096 },
     "semantic_sampling": { "temperature": 1.0, "top_p": 0.95, "top_k": 100, "repetition_penalty": 1.2,   "penalty_window": 50,  "min_tokens": 200, "max_tokens": 9000 }
 }
@@ -574,6 +575,17 @@ Audio encoder: `"mp3"`, `"wav16"`, `"wav24"`, `"wav32"`.
 
 **`mp3_bitrate`** (int, default `128`)
 MP3 encoder bitrate in kbps. WAV outputs ignore it.
+
+**`adapters`** (array, default `[]`)
+Adapters merged into the backbone for this request, in order, each
+`{"name", "scale", "ar_scale", "nar_scale"}`. `name` is an entry of the
+server `--adapters` directory (or of `yue-synth --adapters`), never a path.
+`scale` (default `1.0`) applies to both halves, `ar_scale` and `nar_scale`
+override it for one half, and `0` leaves that half untouched. A half is
+keyed in the model store on its own adapter list, so an AR only adapter
+never reloads the NAR half. `"adapter"` and `"adapter_scale"` are read too,
+as a one entry list. An unknown name is a 400 from the server and a FATAL
+from the CLI.
 
 **`abc_sampling`**, **`semantic_sampling`** (objects)
 Per stage sampling presets, checkpoint values by default. Bounds enforced
@@ -661,6 +673,7 @@ Required:
 
 Optional:
   --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe
+  --adapters <dir>       Adapter directory, requests name its entries
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
   --max-batch <N>        Song batch limit, one KV set each (default: 1)
@@ -687,7 +700,8 @@ POST /synth                     Submit a generation job, returns job ID
   response: {"id":"1a2b..."}
   400 on malformed JSON, unknown cot mode, unknown output_format,
   steps < 1, lm_batch_size outside [1, --max-batch], synth_batch_size
-  outside [1, 9], or a sampling preset outside the protocol bounds
+  outside [1, 9], or a sampling preset outside the protocol bounds, or an adapter
+  name the adapter directory does not hold
 
 POST /transcribe                Submit a transcription job, returns job ID
   body: multipart/form-data, an "audio" part (WAV or MP3) and an optional
