@@ -30,11 +30,13 @@
 // factor, a DoRA magnitude or an extra conditioning branch would otherwise
 // merge into a partial, plausible and wrong model.
 //
-// The merge runs between the GGUF loads and wctx_alloc, on the staged
+// The merge engine, adapter_apply, takes terms from any source: the request
+// adapters here, the LoRA factors a transcriber head carries for MERT. It
+// runs between the GGUF loads of a model and its wctx_alloc, on the staged
 // PendingCopy of each tensor, so the QKV and gate/up fusions concatenate
-// adapted rows. Per tensor: the base dequantized on the host, every term of
-// every adapter summed in one backend graph, the sum quantized back to the
-// GGUF type on the host, rows split across threads.
+// adapted rows. Per tensor: the base dequantized on the host, every term
+// summed in one backend graph, the sum quantized back to the GGUF type on
+// the host, rows split across threads.
 
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
@@ -334,31 +336,49 @@ static int64_t adapter_numel(const STEntry & e) {
     return n;
 }
 
-// Elements [first, first + n) of a tensor as F32
-static bool adapter_f32(const STFile & st, const STEntry & e, int64_t first, int64_t n, float * dst) {
-    const uint8_t * src = (const uint8_t *) st_data(st, e);
-    if (e.dtype == "F32") {
-        memcpy(dst, src + first * 4, (size_t) n * 4);
-    } else if (e.dtype == "BF16") {
-        ggml_bf16_to_fp32_row((const ggml_bf16_t *) src + first, dst, n);
-    } else if (e.dtype == "F16") {
-        ggml_fp16_to_fp32_row((const ggml_fp16_t *) src + first, dst, n);
-    } else {
-        fprintf(stderr, "[Adapter] FATAL: %s has dtype %s\n", e.name.c_str(), e.dtype.c_str());
-        return false;
-    }
-    return true;
-}
+// A tensor a term reads: its data, F32, F16 or BF16 rows of ne0 elements
+struct AdapterTensor {
+    const void *   data;
+    enum ggml_type type;
+    int64_t        ne0, ne1;
+};
 
 // One term on one GGUF tensor
 struct AdapterTerm {
-    const STFile *  st;
-    AdapterRole     role;  // ROLE_A for a LoRA pair, ROLE_DIFF, ROLE_FULL
-    const STEntry * a;     // A [rank, in], or D, or F
-    const STEntry * b;     // B [out, rank], rows [row0, row0 + rows) land on the tensor
-    int64_t         row0;
-    float           scale;
+    AdapterRole   role;  // ROLE_A for a LoRA pair, ROLE_DIFF, ROLE_FULL
+    AdapterTensor a;     // A [rank, in], or D, or F
+    AdapterTensor b;     // B [out, rank], rows [row0, row0 + rows) land on the tensor
+    int64_t       row0;
+    float         scale;
 };
+
+// The terms of a merge, by GGUF tensor name
+using AdapterTerms = std::map<std::string, std::vector<AdapterTerm>>;
+
+// Elements [first, first + n) of a term tensor as F32
+static void adapter_f32(const AdapterTensor & t, int64_t first, int64_t n, float * dst) {
+    const uint8_t * src = (const uint8_t *) t.data + first * ggml_type_size(t.type);
+    if (t.type == GGML_TYPE_F32) {
+        memcpy(dst, src, (size_t) n * 4);
+    } else {
+        ggml_get_type_traits(t.type)->to_float(src, dst, n);
+    }
+}
+
+// A safetensors tensor as a term tensor, false for a dtype a term cannot read
+static bool adapter_st_tensor(const STFile & st, const STEntry & e, AdapterTensor * out) {
+    enum ggml_type type = e.dtype == "F32"  ? GGML_TYPE_F32 :
+                          e.dtype == "F16"  ? GGML_TYPE_F16 :
+                          e.dtype == "BF16" ? GGML_TYPE_BF16 :
+                                              GGML_TYPE_COUNT;
+    if (type == GGML_TYPE_COUNT) {
+        fprintf(stderr, "[Adapter] FATAL: %s has dtype %s\n", e.name.c_str(), e.dtype.c_str());
+        return false;
+    }
+    int64_t ne0 = e.n_dims ? e.shape[e.n_dims - 1] : 1;
+    *out        = { st_data(st, e), type, ne0, adapter_numel(e) / ne0 };
+    return true;
+}
 
 // The module tensors of one adapter, by module and role
 struct AdapterModule {
@@ -415,15 +435,12 @@ static bool adapter_merge_tensor(WeightCtx *                      wctx,
     std::vector<std::pair<struct ggml_tensor *, std::vector<float>>> inputs;
     for (const AdapterTerm & t : terms) {
         if (t.role == ROLE_A) {
-            const int64_t      rank = t.a->shape[0];
+            const int64_t      rank = t.a.ne1;
             std::vector<float> a((size_t) (rank * ne0));
             std::vector<float> at(a.size());
             std::vector<float> b((size_t) (ne1 * rank));
-            if (!adapter_f32(*t.st, *t.a, 0, rank * ne0, a.data()) ||
-                !adapter_f32(*t.st, *t.b, t.row0 * rank, ne1 * rank, b.data())) {
-                ggml_free(ctx);
-                return false;
-            }
+            adapter_f32(t.a, 0, rank * ne0, a.data());
+            adapter_f32(t.b, t.row0 * rank, ne1 * rank, b.data());
             for (int64_t r = 0; r < rank; r++) {
                 for (int64_t i = 0; i < ne0; i++) {
                     at[i * rank + r] = a[r * ne0 + i];
@@ -436,10 +453,7 @@ static bool adapter_merge_tensor(WeightCtx *                      wctx,
             out = ggml_add(ctx, out, ggml_scale(ctx, ggml_mul_mat(ctx, ta, tb), t.scale));
         } else {
             std::vector<float> d((size_t) (ne0 * ne1));
-            if (!adapter_f32(*t.st, *t.a, 0, ne0 * ne1, d.data())) {
-                ggml_free(ctx);
-                return false;
-            }
+            adapter_f32(t.a, 0, ne0 * ne1, d.data());
             struct ggml_tensor * td = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, ne0, ne1);
             inputs.push_back({ td, std::move(d) });
             struct ggml_tensor * delta = t.role == ROLE_DIFF ? td : ggml_sub(ctx, td, w);
@@ -475,6 +489,41 @@ static bool adapter_merge_tensor(WeightCtx *                      wctx,
         });
     }
     pc->src = dst;
+    return true;
+}
+
+// Sums every term into the staged copy of its GGUF tensor, between the GGUF
+// loads of a model and its wctx_alloc
+static bool adapter_apply(WeightCtx * wctx, const GGUFModel & gf, ggml_backend_t backend, const AdapterTerms & terms) {
+    std::unordered_map<const void *, size_t> staged;
+    for (size_t i = 0; i < wctx->pending.size(); i++) {
+        staged[wctx->pending[i].src] = i;
+    }
+    for (const auto & kv : terms) {
+        const struct ggml_tensor * meta = ggml_get_tensor(gf.meta, kv.first.c_str());
+        if (!meta) {
+            fprintf(stderr, "[Adapter] FATAL: %s is not in the GGUF\n", kv.first.c_str());
+            return false;
+        }
+        for (const AdapterTerm & t : kv.second) {
+            bool fits = t.role == ROLE_A ?
+                            t.a.ne0 == meta->ne[0] && t.b.ne0 == t.a.ne1 && t.row0 + ggml_nrows(meta) <= t.b.ne1 :
+                            t.a.ne0 * t.a.ne1 == ggml_nelements(meta);
+            if (!fits) {
+                fprintf(stderr, "[Adapter] FATAL: a term does not fit %s\n", kv.first.c_str());
+                return false;
+            }
+        }
+        int64_t idx = gguf_find_tensor(gf.gguf, kv.first.c_str());
+        auto    it  = staged.find(gf.mapping + gf.data_offset + gguf_get_tensor_offset(gf.gguf, idx));
+        if (it == staged.end()) {
+            fprintf(stderr, "[Adapter] FATAL: %s is not staged by this model\n", kv.first.c_str());
+            return false;
+        }
+        if (!adapter_merge_tensor(wctx, &wctx->pending[it->second], meta, kv.second, backend)) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -518,10 +567,10 @@ static bool adapter_merge(WeightCtx *                     wctx,
     if (adapters.empty()) {
         return true;
     }
-    Timer                                           timer;
-    std::vector<STFile>                             files(adapters.size());
-    bool                                            ok = true;
-    std::map<std::string, std::vector<AdapterTerm>> terms;
+    Timer               timer;
+    std::vector<STFile> files(adapters.size());
+    bool                ok = true;
+    AdapterTerms        terms;
 
     for (size_t f = 0; f < adapters.size() && ok; f++) {
         const AdapterUse & use = adapters[f];
@@ -568,62 +617,49 @@ static bool adapter_merge(WeightCtx *                     wctx,
                 break;
             }
             int64_t rows = 0;
-            int64_t in   = 0;
             for (auto & target : t) {
-                const struct ggml_tensor * meta = ggml_get_tensor(gf.meta, target.first.c_str());
-                rows += ggml_nrows(meta);
-                in = meta->ne[0];
+                rows += ggml_nrows(ggml_get_tensor(gf.meta, target.first.c_str()));
             }
             if (m.a || m.b) {
-                if (!m.a || !m.b || m.a->n_dims != 2 || m.b->n_dims != 2 || m.a->shape[0] != m.b->shape[1] ||
-                    m.a->shape[1] != in || m.b->shape[0] != rows) {
+                AdapterTensor a, b;
+                if (!m.a || !m.b || !adapter_st_tensor(st, *m.a, &a) || !adapter_st_tensor(st, *m.b, &b) ||
+                    b.ne1 != rows) {
                     fprintf(stderr, "[Adapter] FATAL: %s: %s has no matching A and B\n", use.path.c_str(),
                             k.module.c_str());
                     ok = false;
                     break;
                 }
-                float rank  = (float) m.a->shape[0];
+                float rank  = (float) a.ne1;
                 float alpha = file_alpha != 0.0f ? file_alpha : rank;
                 if (m.alpha && adapter_numel(*m.alpha) == 1) {
-                    adapter_f32(st, *m.alpha, 0, 1, &alpha);
+                    AdapterTensor s;
+                    if (!adapter_st_tensor(st, *m.alpha, &s)) {
+                        ok = false;
+                        break;
+                    }
+                    adapter_f32(s, 0, 1, &alpha);
                 }
                 for (auto & target : t) {
-                    terms[target.first].push_back({ &st, ROLE_A, m.a, m.b, target.second, use.scale * alpha / rank });
+                    terms[target.first].push_back({ ROLE_A, a, b, target.second, use.scale * alpha / rank });
                 }
             }
             for (const STEntry * e : { m.diff, m.full }) {
+                AdapterTensor d;
                 if (!e) {
                     continue;
                 }
-                if (t.size() != 1 || adapter_numel(*e) != rows * in) {
+                if (t.size() != 1 || !adapter_st_tensor(st, *e, &d)) {
                     fprintf(stderr, "[Adapter] FATAL: %s: %s does not match its tensor\n", use.path.c_str(),
                             e->name.c_str());
                     ok = false;
                     break;
                 }
-                terms[t[0].first].push_back({ &st, e == m.diff ? ROLE_DIFF : ROLE_FULL, e, nullptr, 0, use.scale });
+                terms[t[0].first].push_back({ e == m.diff ? ROLE_DIFF : ROLE_FULL, d, {}, 0, use.scale });
             }
         }
     }
 
-    std::unordered_map<const void *, size_t> staged;
-    for (size_t i = 0; i < wctx->pending.size(); i++) {
-        staged[wctx->pending[i].src] = i;
-    }
-    for (auto & kv : terms) {
-        if (!ok) {
-            break;
-        }
-        int64_t idx = gguf_find_tensor(gf.gguf, kv.first.c_str());
-        auto    it  = staged.find(gf.mapping + gf.data_offset + gguf_get_tensor_offset(gf.gguf, idx));
-        if (it == staged.end()) {
-            fprintf(stderr, "[Adapter] FATAL: %s is not staged by this half\n", kv.first.c_str());
-            ok = false;
-            break;
-        }
-        ok = adapter_merge_tensor(wctx, &wctx->pending[it->second], ggml_get_tensor(gf.meta, kv.first.c_str()),
-                                  kv.second, backend);
-    }
+    ok = ok && adapter_apply(wctx, gf, backend, terms);
     for (STFile & st : files) {
         st_close(&st);
     }

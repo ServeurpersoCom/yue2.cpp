@@ -16,13 +16,15 @@ https://huggingface.co/Serveurperso/YuE2-GGUF/tree/main
 |------|----------|------|
 | Backbone | YuE2-3B-Q8_0.gguf | 3.81 GB |
 | VAE | YuE2-Vae-F32.gguf | 530 MB |
-| Transcriber (optional) | SheetSage2-Q8_0.gguf | 958 MB |
+| Audio encoder (optional) | MERT-v2-FullSong-Q8_0.gguf | 902 MB |
+| Transcriber (optional) | SheetSage2-Q8_0.gguf | 106 MB |
 
 Q8_0 is near lossless. The backbone also ships in BF16 / Q6_K / Q5_K_M, the
 VAE in F32 only since its weights are the audio. The Q8_0 pair runs in about
 4.4 GB plus the KV cache, the native pair in about 7.7 GB. The transcriber
-turns a recording into its score for covers; it ships in F32 / Q8_0 / Q6_K /
-Q5_K_M and loads only for a transcription.
+turns a recording into its score for covers, a head on the MERT audio
+encoder it finds beside it in the same quant; both ship in F32 / Q8_0 / Q6_K
+/ Q5_K_M and load only for a transcription.
 
 Alternative: `./models.sh` downloads the default set automatically
 (needs `pip install hf`), `./models.sh --all` everything.
@@ -67,7 +69,7 @@ To build the GGUFs locally from the official checkpoints instead, download
 [m-a-p/YuE2-3B](https://huggingface.co/m-a-p/YuE2-3B),
 [m-a-p/YuE2-Vae](https://huggingface.co/m-a-p/YuE2-Vae), and for the
 transcriber [m-a-p/SheetSage2](https://huggingface.co/m-a-p/SheetSage2) with
-its parent [m-a-p/MERT-v2-FullSong](https://huggingface.co/m-a-p/MERT-v2-FullSong)
+its base model [m-a-p/MERT-v2-FullSong](https://huggingface.co/m-a-p/MERT-v2-FullSong)
 (both gated, accept their terms and `hf auth login` first) into `checkpoints/`.
 
 ```bash
@@ -81,7 +83,8 @@ pip install hf gguf numpy
 |------|-----------|------|
 | YuE2-3B-BF16.gguf | 3.6B Mixture-of-Transformers backbone | 7.17 GB |
 | YuE2-Vae-F32.gguf | Oobleck VAE encoder + decoder | 530 MB |
-| SheetSage2-F32.gguf | SheetSage2 transcriber on MERT-v2-FullSong, LoRA merged | 2.71 GB |
+| MERT-v2-FullSong-F32.gguf | MERT-v2 audio encoder | 2.53 GB |
+| SheetSage2-F32.gguf | SheetSage2 transcriber head and its MERT LoRA | 229 MB |
 
 ## Run
 
@@ -153,7 +156,7 @@ Required:
   --vae <gguf>           VAE GGUF
 
 Optional:
-  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe
+  --transcriber <gguf>   SheetSage2 GGUF, MERT beside it, enables /transcribe
   --adapters <dir>       Directory of LoRA adapters a request can stack
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)

@@ -72,15 +72,19 @@ unset picks the best available one.
 
 ## Models
 
-Two GGUF files, one per checkpoint repository:
+One GGUF file per checkpoint repository:
 
 | GGUF | Component | Native dtype | Size |
 |------|-----------|--------------|------|
 | YuE2-3B-BF16.gguf | 3.6B Mixture-of-Transformers backbone | BF16 | 7.17 GB |
 | YuE2-Vae-F32.gguf | Oobleck VAE encoder + decoder | F32 | 530 MB |
+| MERT-v2-FullSong-F32.gguf | 632M MERT-v2 audio encoder, optional | F32 | 2.53 GB |
+| SheetSage2-F32.gguf | 57M transcriber head with its MERT LoRA, optional | F32 | 229 MB |
 
 Quantized from the native backbone by `quantize.sh`: Q8_0 at 3.81 GB, Q6_K
-at 2.94 GB, Q5_K_M at 2.62 GB. The scripts and the examples load Q8_0. The
+at 2.94 GB, Q5_K_M at 2.62 GB; the audio encoder at 902 / 769 / 695 MB, the
+transcriber head at 106 / 95 / 92 MB. The scripts and the examples load
+Q8_0. The
 published set lives at
 [Serveurperso/YuE2-GGUF](https://huggingface.co/Serveurperso/YuE2-GGUF),
 named after the checkpoint repositories it comes from.
@@ -109,7 +113,10 @@ reads `yue2.block_count`, which the converter writes next to the config
 json. `embed_tokens` and the untied `lm_head`
 always take Q6_K, 1D norms and biases are promoted to F32, and the VAE is
 never quantized (its architecture is recognized by the `yue2-vae` value of
-`general.architecture`).
+`general.architecture`). The audio encoder and the transcriber head
+quantize their linear projections alone: convolution kernels, the mel
+filterbank, the learned positions and the LoRA factors stay F32, the LoRA
+adding its exact delta to the quantized encoder at load.
 
 ## VRAM and model residency
 
@@ -150,7 +157,8 @@ Weight buffers per module, measured at load on CUDA:
 |--------|------|------|------|--------|
 | Backbone, AR half (311 tensors) | 4131.5 MB | 2195.1 MB | 1694.8 MB | 1542.4 MB |
 | Backbone, NAR half (316 tensors) | 2698.0 MB | 1433.5 MB | 1107.0 MB | 953.9 MB |
-| Transcriber, SheetSage2 on MERT-v2 (1035 tensors) | 2582.1 MB (F32) | 912.6 MB | 775.6 MB | 702.4 MB |
+| Audio encoder, MERT-v2 with the transcriber LoRA (872 tensors) | 2412.0 MB (F32) | 859.9 MB | 732.5 MB | 662.4 MB |
+| Transcriber head, SheetSage2 (163 tensors) | 170.1 MB (F32) | 52.7 MB | 43.0 MB | 40.0 MB |
 | VAE decoder | 126.7 MB | | | |
 
 The KV cache is the other big term and the only one that scales with a
@@ -305,12 +313,15 @@ Conv weights are stored F16 on device with F32 activations.
 ### SheetSage2 transcriber (`SheetSage2`, optional)
 
 The audio to score model of the same authors, ported so a recording can
-become the `abc` of a cover. One GGUF holds MERT-v2-FullSong with the
-SheetSage2 LoRA adapters merged into its attention projections (float32
-at conversion, bit identical to the merge the reference does at load)
-and the SheetSage2 head. `src/sheetsage.h` runs one 300 s window, every
-input padded with silence to that length like the reference since the
-global response norm of the frontend spans the whole window:
+become the `abc` of a cover. It is a head on MERT-v2-FullSong, and each
+ships as the GGUF of its own repository: `src/mert.h` loads the MERT GGUF
+found beside the head GGUF in the same quant (the head config names its
+base model), and merges the SheetSage2 LoRA factors into the four
+attention projections of every layer at load, `W += alpha / rank * B @ A`
+through the adapter engine of `src/adapter.h`. `src/sheetsage.h` builds
+MERT and the head into one graph over a 300 s window, every input padded
+with silence to that length like the reference since the global response
+norm of the frontend spans the whole window:
 
 ```
 24 kHz mono
@@ -363,9 +374,11 @@ Terms on a tensor W, s the strength of the adapter: LoRA
 `W += s * alpha / rank * B @ A` (alpha from the module `.alpha`, then
 `adapter_config.json`, then the safetensors metadata, else the rank),
 diff `W += s * D`, full replacement `W += s * (F - W)` for `vae2llm` and
-`llm2vae`. The merge runs between the GGUF loads of a half and its
-`wctx_alloc`, on the staged copy of each projection, so the QKV and
-gate/up fusions concatenate adapted rows. Per tensor: the base
+`llm2vae`. The merge engine, `adapter_apply`, takes terms from any source,
+the request adapters as the LoRA factors the transcriber head carries for
+MERT. It runs between the GGUF loads of a model and its `wctx_alloc`, on
+the staged copy of each projection, so the QKV and gate/up fusions
+concatenate adapted rows. Per tensor: the base
 dequantized on the host, every term of every stacked adapter summed in
 one backend graph, the sum quantized back to the GGUF type on the host
 once, rows split across threads. One adapter on both halves costs about
@@ -706,7 +719,7 @@ Required:
   --vae <gguf>           VAE GGUF
 
 Optional:
-  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe
+  --transcriber <gguf>   SheetSage2 GGUF, MERT beside it, enables /transcribe
   --adapters <dir>       Directory of LoRA adapters a request can stack
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
@@ -815,7 +828,7 @@ message out.
 Usage: ./yue-transcribe --model <gguf> --audio <file> [options]
 
 Required:
-  --model <gguf>         Transcriber GGUF
+  --model <gguf>         Transcriber GGUF, MERT beside it
   --audio <file>         Recording to transcribe (WAV or MP3)
 
 Optional:
@@ -923,7 +936,7 @@ Twenty four cases, all green on CUDA0 and CPU:
 | nar-ode (8 midpoint steps) | 5e-2 | 1.552e-3 | 1.448e-3 |
 | nar-batch (3 variations, one graph) | 5e-2 | 7.582e-3 | 8.358e-3 |
 | nar-ode-batch (2 variations, 8 steps) | 5e-2 | 2.117e-3 | 2.211e-3 |
-| sheetsage-mel / subsampled / backbone / mixed / memory (synthetic piece) | 5e-2 | 2.5e-6 to 2.3e-2 | 2.5e-6 to 7.3e-3 |
+| sheetsage-mel / subsampled / backbone / mixed / memory (synthetic piece) | 5e-2 | 2.5e-6 to 2.6e-2 | 2.5e-6 to 2.8e-4 |
 | sheetsage-tokens, sheetsage-abc, sheetsage-abc-melody | identical | identical | identical |
 | bpe | 0 (exact) | 0 | 0 |
 | sampling-abc | 1e-4 | 1.138e-8 | 1.138e-8 |

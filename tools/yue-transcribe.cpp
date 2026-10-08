@@ -19,7 +19,7 @@ static void print_usage(const char * prog) {
             "Usage: %s --model <gguf> --audio <file> [options]\n"
             "\n"
             "Required:\n"
-            "  --model <gguf>         Transcriber GGUF\n"
+            "  --model <gguf>         Transcriber GGUF, MERT beside it\n"
             "  --audio <file>         Recording to transcribe (WAV or MP3)\n"
             "\n"
             "Optional:\n"

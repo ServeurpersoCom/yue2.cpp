@@ -538,7 +538,7 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
 static void run_transcribe(std::shared_ptr<Job> job, std::vector<float> audio, bool melody_only) {
     active_job_set(job);
     fprintf(stderr, "[Server] Transcribe job %s: %.1f s of audio, %s\n", job->id.c_str(),
-            (double) audio.size() / SS2_SAMPLE_RATE, melody_only ? "melody only" : "full score");
+            (double) audio.size() / MERT_SAMPLE_RATE, melody_only ? "melody only" : "full score");
     std::string abc, error;
     bool        ok = pipeline_transcribe(&g_pipeline, audio.data(), (int) audio.size(), melody_only, &abc, &error);
     active_job_set(nullptr);
@@ -610,7 +610,7 @@ static void print_usage(const char * prog) {
             "  --vae <gguf>           VAE GGUF\n"
             "\n"
             "Optional:\n"
-            "  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe\n"
+            "  --transcriber <gguf>   SheetSage2 GGUF, MERT beside it, enables /transcribe\n"
             "  --adapters <dir>       Directory of LoRA adapters a request can stack\n"
             "  --host <addr>          Listen address (default: 0.0.0.0)\n"
             "  --port <N>             Listen port (default: 8087)\n"
