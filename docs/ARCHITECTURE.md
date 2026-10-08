@@ -648,7 +648,9 @@ Semantic stream as comma separated codec values, 25 per second. Non-empty
 replaces the autoregressive stage: prefix and codes prefill in one forward
 and the song renders deterministically, so the flow matching side (steps,
 seed, decoder, output format) can be iterated without re-rolling the
-model. Written by `yue-synth --tokens` and returned by the server as the
+model. A stream with no `abc` renders without a score whatever the `cot`,
+the codes of a recording from `/tokenize` among them. Written by
+`yue-synth --tokens` and `yue-tokenize`, and returned by the server as the
 JSON part paired with the audio.
 
 **`peak_clip`** (int, default `10`)

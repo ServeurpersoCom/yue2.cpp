@@ -321,6 +321,12 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     const int B = replay ? 1 : r.lm_batch_size;
     const int M = r.synth_batch_size;
 
+    // A supplied stream with no score renders without one, whatever the
+    // mode: a score planned now is not the one the codes follow
+    if (replay && r.abc.empty()) {
+        cot = YUE2_COT_OFF;
+    }
+
     // Score per song: supplied by the caller, planned by the model, or absent
     std::vector<std::vector<int>> abc_ids(B);
     std::vector<std::string>      scores(B);
@@ -360,7 +366,8 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     for (int i = 0; i < B; i++) {
         prefixes[i] = yue2_build_prompt_ids(encode, cot, r.style, r.lyrics, has_score ? &abc_ids[i] : nullptr);
     }
-    fprintf(stderr, "[Prompt] cot=%s, songs=%d, variations=%d, %zu tracks\n", r.cot.c_str(), B, M, (size_t) B * M);
+    fprintf(stderr, "[Prompt] cot=%s, songs=%d, variations=%d, %zu tracks\n", has_score ? r.cot.c_str() : "off", B, M,
+            (size_t) B * M);
 
     float                         guidance = r.cfg_scale < 0.0f ? yue2_default_guidance(cot) : r.cfg_scale;
     std::vector<std::vector<int>> negatives;

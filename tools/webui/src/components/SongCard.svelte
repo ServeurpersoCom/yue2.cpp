@@ -20,7 +20,6 @@
 		jobResultTranscribe,
 		jobResultTokenize
 	} from '../lib/api.js';
-	import { COT_OFF } from '../lib/config.js';
 	import { deleteSong, putSong } from '../lib/db.js';
 	import type { Song } from '../lib/types.js';
 	import Waveform from './Waveform.svelte';
@@ -136,15 +135,14 @@
 	}
 
 	// tokenize audio: send the recording to /tokenize and put the semantic
-	// codes it heard in the form, with no score, so Generate renders the song
-	// again through the NAR half. The style and the lyrics stay yours.
+	// codes it heard in the form, so Generate renders the song again through
+	// the NAR half. The style, the lyrics and the mode stay yours.
 	async function tokenize() {
 		try {
 			const jobId = await tokenizeSubmit(song.audio);
 			await pollJob(jobId);
 			const result = await jobResultTokenize(jobId);
 			app.request.semantic_tokens = result.codes ?? '';
-			app.request.cot = COT_OFF;
 			toast('Tokenized: ' + song.name, 4000, true);
 		} catch (e) {
 			toast('Tokenization failed: ' + (e instanceof Error ? e.message : String(e)));
