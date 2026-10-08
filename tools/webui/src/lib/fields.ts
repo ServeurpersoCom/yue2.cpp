@@ -38,7 +38,9 @@ export const FIELDS: readonly FieldDef[] = [
 	{ key: 'synth_batch_size', section: 'post', type: 'num' },
 	{ key: 'seed', section: 'post', type: 'num' },
 	{ key: 'peak_clip', section: 'post', type: 'num' },
-	{ key: 'mp3_bitrate', section: 'post', type: 'num' }
+	{ key: 'mp3_bitrate', section: 'post', type: 'num' },
+	{ key: 'source_start', section: 'post', type: 'num' },
+	{ key: 'source_end', section: 'post', type: 'num' }
 ];
 
 // the seven knobs of a sampling preset, same order as the protocol

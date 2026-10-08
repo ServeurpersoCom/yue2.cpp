@@ -103,11 +103,14 @@ play and download tracks. Open an MP3 or WAV to get it on a card, then
 Transcribe score or Transcribe melody from the card menu: the score lands
 in the score field, pick the matching mode, add your lyrics and a style,
 and the model covers the song. Tokenize audio puts the semantic codes of
-the recording in the form instead: Generate renders the song again
-through YuE2, best with the realaudio NAR adapter selected. Every track
+the recording on its card and in the form instead: Generate renders the
+song again through YuE2, best with the realaudio NAR adapter selected. Every track
 keeps the VAE latents it was decoded from in the browser, the VAE badge
 of its card: download them as a .vae file, open one to get its card back,
-or compute them for a recording you opened.
+or compute them for a recording you opened. To start a song from another
+one, Tokenize audio on its card (a generated card already has its codes),
+tick Src audio and select a section on its waveform: the new song starts
+with that section as the model hears it, and the rest grows from it.
 
 ## Adapters
 

@@ -384,6 +384,13 @@ spectrum by a fraction of a dB: the codes of a quantized MERT stay within
 0.25 dB of the F32 ones in long term spectrum once rendered, and the same
 quant beside rule holds.
 
+### Continuation
+
+The codes of a section of a source song open the prompt of the AR, which
+writes the rest of the song from there, up to `duration` or its end token.
+The NAR then renders the whole song, so the section comes out as the model
+hears it and the rest grows from it.
+
 ### LoRA adapters (`src/adapter.h`, optional)
 
 ```
@@ -582,6 +589,9 @@ the server rejects a request with neither.
     "peak_clip":       10,
     "output_format":   "mp3",
     "mp3_bitrate":     128,
+    "source_tokens":   "",
+    "source_start":    0.0,
+    "source_end":      -1.0,
     "abc_sampling":      { "temperature": 0.7, "top_p": 0.9,  "top_k": 30,  "repetition_penalty": 1.005, "penalty_window": 100, "min_tokens": 32,  "max_tokens": 4096 },
     "semantic_sampling": { "temperature": 1.0, "top_p": 0.95, "top_k": 100, "repetition_penalty": 1.2,   "penalty_window": 50,  "min_tokens": 200, "max_tokens": 9000 }
 }
@@ -670,6 +680,11 @@ LoRA adapters stacked on the backbone, `[{"name": "x.safetensors",
 halves it changes at its own strength, a zero strength leaving them as
 they are. A replay request carries them, the song renders with the same
 weights.
+
+**`source_tokens`**, **`source_start`**, **`source_end`** (string, floats, default `""`, `0` and `-1`)
+The codes of a source song and the section of it, in seconds, the new song
+starts with; `-1` is the end of the source. Exclusive with
+`semantic_tokens`.
 
 **`abc_sampling`**, **`semantic_sampling`** (objects)
 Per stage sampling presets, checkpoint values by default. Bounds enforced
@@ -786,8 +801,9 @@ POST /synth                     Submit a generation job, returns job ID
   response: {"id":"1a2b..."}
   400 on malformed JSON, unknown cot mode, unknown output_format,
   steps < 1, lm_batch_size outside [1, --max-batch], synth_batch_size
-  outside [1, 9], a sampling preset outside the protocol bounds, or an
-  adapter missing from the --adapters directory
+  outside [1, 9], a sampling preset outside the protocol bounds, an
+  adapter missing from the --adapters directory, or both semantic_tokens
+  and source_tokens
 
 POST /transcribe                Submit a transcription job, returns job ID
   body: multipart/form-data, an "audio" part (WAV or MP3) and an optional

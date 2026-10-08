@@ -38,6 +38,9 @@ export interface Yue2Request {
 	peak_clip?: number;
 	mp3_bitrate?: number;
 	adapters?: Yue2Adapter[];
+	source_tokens?: string;
+	source_start?: number;
+	source_end?: number;
 }
 
 // GET /props response

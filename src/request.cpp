@@ -37,6 +37,9 @@ void request_init(Yue2Request * r) {
     r->output_format = OUTPUT_FORMAT_MP3;
     r->mp3_bitrate   = 128;
     r->adapters.clear();
+    r->source_tokens = "";
+    r->source_start  = 0.0f;
+    r->source_end    = -1.0f;
 }
 
 static inline std::string yy_str(yyjson_val * v) {
@@ -163,6 +166,15 @@ static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
     if ((v = yyjson_obj_get(obj, "mp3_bitrate")) && yyjson_is_int(v)) {
         r->mp3_bitrate = yyjson_get_int(v);
     }
+    if ((v = yyjson_obj_get(obj, "source_tokens")) && yyjson_is_str(v)) {
+        r->source_tokens = yy_str(v);
+    }
+    if ((v = yyjson_obj_get(obj, "source_start")) && yyjson_is_num(v)) {
+        r->source_start = (float) yyjson_get_num(v);
+    }
+    if ((v = yyjson_obj_get(obj, "source_end")) && yyjson_is_num(v)) {
+        r->source_end = (float) yyjson_get_num(v);
+    }
     if ((v = yyjson_obj_get(obj, "adapters")) && yyjson_is_arr(v)) {
         size_t       i, n;
         yyjson_val * item;
@@ -269,6 +281,15 @@ std::string request_to_json(const Yue2Request * r, bool sparse) {
     if (!sparse || r->mp3_bitrate != d.mp3_bitrate) {
         yyjson_mut_obj_add_int(doc, root, "mp3_bitrate", r->mp3_bitrate);
     }
+    if (!sparse || r->source_tokens != d.source_tokens) {
+        yyjson_mut_obj_add_strncpy(doc, root, "source_tokens", r->source_tokens.c_str(), r->source_tokens.size());
+    }
+    if (!sparse || r->source_start != d.source_start) {
+        yyjson_mut_obj_add_real(doc, root, "source_start", r->source_start);
+    }
+    if (!sparse || r->source_end != d.source_end) {
+        yyjson_mut_obj_add_real(doc, root, "source_end", r->source_end);
+    }
     if (!sparse || !r->adapters.empty()) {
         yyjson_mut_val * list = yyjson_mut_arr(doc);
         for (const Yue2Adapter & a : r->adapters) {
@@ -316,5 +337,8 @@ Yue2Request request_replay(const Yue2Request & base,
     r.seed             = base.seed + variation;
     r.lm_batch_size    = 1;
     r.synth_batch_size = 1;
+    r.source_tokens    = "";
+    r.source_start     = 0.0f;
+    r.source_end       = -1.0f;
     return r;
 }

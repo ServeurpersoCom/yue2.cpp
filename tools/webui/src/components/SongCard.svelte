@@ -34,6 +34,39 @@
 	let playing = $state(false);
 	let time = $state(0);
 	let dur = $state(0);
+	let rangeStart = $state(0);
+	let rangeEnd = $state(0);
+
+	let isSrc = $derived(app.srcSongId === song.id);
+
+	// the source of a continuation: one card at a time, its section staying
+	// in the request
+	function toggleSrc() {
+		app.srcSongId = isSrc ? null : (song.id ?? null);
+	}
+
+	// waveform drag to the request
+	$effect(() => {
+		if (isSrc && rangeEnd > rangeStart) {
+			app.request.source_start = Math.round(rangeStart * 100) / 100;
+			app.request.source_end = Math.round(rangeEnd * 100) / 100;
+		}
+	});
+
+	// request to waveform visual (field input, a loaded request)
+	$effect(() => {
+		if (isSrc) {
+			const rs = Number(app.request.source_start ?? 0);
+			const re = Number(app.request.source_end ?? -1);
+			if (re > rs) {
+				rangeStart = rs;
+				rangeEnd = re;
+			} else {
+				rangeStart = 0;
+				rangeEnd = 0;
+			}
+		}
+	});
 
 	function toggle() {
 		playing = !playing;
@@ -108,6 +141,7 @@
 
 	async function doRemove() {
 		if (song.id == null) return;
+		if (app.srcSongId === song.id) app.srcSongId = null;
 		await deleteSong(song.id);
 		const idx = app.songs.findIndex((s) => s.id === song.id);
 		if (idx >= 0) app.songs.splice(idx, 1);
@@ -164,15 +198,18 @@
 		}
 	}
 
-	// tokenize audio: send the recording to /tokenize and put the semantic
-	// codes it heard in the form, so Generate renders the song again through
-	// the NAR half. The style, the lyrics and the mode stay yours.
+	// tokenize audio: the semantic codes of the recording kept on the card,
+	// the card then ready to open a continuation, and put in the form, so
+	// Generate renders the song again through the NAR half. The style, the
+	// lyrics and the mode stay yours.
 	async function tokenize() {
 		try {
 			const jobId = await tokenizeSubmit(song.audio);
 			await pollJob(jobId);
 			const result = await jobResultTokenize(jobId);
-			app.request.semantic_tokens = result.codes ?? '';
+			song.request = { ...song.request, semantic_tokens: result.codes };
+			if (song.id != null) await putSong($state.snapshot(song));
+			app.request.semantic_tokens = result.codes;
 			toast('Tokenized: ' + song.name, 4000, true);
 		} catch (e) {
 			toast('Tokenization failed: ' + (e instanceof Error ? e.message : String(e)));
@@ -225,13 +262,32 @@
 			<Heart size={14} fill={song.favorite ? 'currentColor' : 'none'} />
 		</button>
 	</div>
-	<Waveform {song} bind:playing bind:time bind:dur />
+	<Waveform
+		{song}
+		bind:playing
+		bind:time
+		bind:dur
+		selectable={isSrc}
+		bind:rangeStart
+		bind:rangeEnd
+	/>
 	<div class="card-footer">
 		<span class="format-badge">{song.format.toUpperCase()}</span>
 		{#if song.latents}
 			<span class="format-badge">VAE</span>
 		{/if}
 		<span class="timecode">{fmtPos(time)} / {fmtDur(dur)}</span>
+		<div class="card-actions">
+			<label class="icon-btn"
+				><input
+					type="checkbox"
+					class="ref-check"
+					checked={isSrc}
+					onchange={toggleSrc}
+					title="Source of a continuation"
+				/> Src audio</label
+			>
+		</div>
 	</div>
 </div>
 
@@ -291,6 +347,17 @@
 		color: var(--fg);
 		white-space: nowrap;
 		flex: 1;
+	}
+	.card-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.2rem;
+		flex-shrink: 0;
+		font-size: 0.8rem;
+	}
+	.ref-check {
+		cursor: pointer;
+		accent-color: var(--focus);
 	}
 	.icon-btn {
 		background: none;

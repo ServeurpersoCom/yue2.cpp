@@ -272,6 +272,18 @@
 			req.seed =
 				userSeed != null && userSeed >= 0 ? userSeed : Math.floor(Math.random() * 0x100000000);
 
+			// A source card opens the song with its section: its codes ride in
+			// source_tokens, kept on the card by its generation or by
+			// Tokenize audio
+			const src = app.srcSongId != null ? app.songs.find((s) => s.id === app.srcSongId) : null;
+			if (src && !src.request.semantic_tokens) {
+				toast('Tokenize audio on the source card first');
+				return;
+			}
+			if (src) {
+				req.source_tokens = src.request.semantic_tokens;
+				req.semantic_tokens = undefined;
+			}
 			const jobId = await synthSubmit(req, app.format);
 			const job: PendingJob = { id: jobId, name: app.name || 'Untitled', request: req };
 			saveJob(job);
@@ -287,7 +299,7 @@
 	// asks which take is wanted before it starts. An empty box goes straight
 	// to the pipeline.
 	function askTake() {
-		if (app.request.semantic_tokens?.trim()) {
+		if (app.request.semantic_tokens?.trim() && app.srcSongId == null) {
 			takeOpen = true;
 			return;
 		}
@@ -665,6 +677,22 @@
 						placeholder={ph(d?.seed)}
 						bind:value={app.request.seed}
 						title="Seed of the acoustic noise. Change it to re-render the same song differently."
+					/></label
+				>
+				<label
+					>Source start <input
+						type="text"
+						placeholder={ph(d?.source_start)}
+						bind:value={app.request.source_start}
+						title="Seconds into the Src audio card where the section opening the song starts. Drag on its waveform to set the section."
+					/></label
+				>
+				<label
+					>Source end <input
+						type="text"
+						placeholder={ph(d?.source_end)}
+						bind:value={app.request.source_end}
+						title="Seconds into the Src audio card where the section ends and the model writes on, -1 its end."
 					/></label
 				>
 				<label

@@ -349,10 +349,73 @@ struct KvScope {
     }
 };
 
+// The codes of a continuation: the section [source_start, source_end) of
+// the source stream opens the song, the AR writes on behind the prompt and
+// it until the requested length or its end token. The whole song is then
+// rendered like a generated one, the section included.
+static bool pipeline_continue_codes(Yue2Pipeline *           p,
+                                    Qwen3LM *                lm,
+                                    const Yue2Request &      r,
+                                    const std::vector<int> & prompt,
+                                    const std::vector<int> * negative,
+                                    float                    guidance,
+                                    Yue2Generation *         codes,
+                                    bool (*cancelled)(void *),
+                                    void * cancel_data) {
+    std::vector<int> values;
+    if (!pipeline_parse_tokens(r.source_tokens, &values)) {
+        return false;
+    }
+    const int T_src = (int) values.size();
+    const int a     = std::clamp((int) lroundf(r.source_start * YUE2_FRAME_RATE), 0, T_src);
+    const int b     = r.source_end < 0.0f ? T_src : std::clamp((int) lroundf(r.source_end * YUE2_FRAME_RATE), 0, T_src);
+    if (b <= a) {
+        fprintf(stderr, "[Continue] FATAL: empty source section %.2f s .. %.2f s\n", (double) r.source_start,
+                (double) r.source_end);
+        return false;
+    }
+
+    // The requested length counts the section, the stage keeps its own cap
+    Yue2Sampling sampling = r.semantic_sampling;
+    int          budget   = sampling.max_tokens - (b - a);
+    if (r.duration > 0.0f) {
+        budget = std::min(budget, (int) (r.duration * (float) YUE2_FRAME_RATE) - (b - a));
+    }
+    if (budget < 1) {
+        fprintf(stderr, "[Continue] FATAL: nothing left to write after the %d frames of the section\n", b - a);
+        return false;
+    }
+    sampling.max_tokens = budget;
+    sampling.min_tokens = std::min(sampling.min_tokens, budget);
+    fprintf(stderr, "[Continue] Source %d frames, section [%d, %d), budget %d\n", T_src, a, b, budget);
+
+    std::vector<int> section((size_t) (b - a));
+    for (int f = a; f < b; f++) {
+        section[(size_t) (f - a)] = values[(size_t) f] + YUE2_CODEC_OFFSET;
+    }
+    std::vector<std::vector<int>> prefixes(1, prompt), negatives;
+    prefixes[0].insert(prefixes[0].end(), section.begin(), section.end());
+    if (negative) {
+        negatives.assign(1, *negative);
+        negatives[0].insert(negatives[0].end(), section.begin(), section.end());
+    }
+    std::vector<Yue2Generation> drawn;
+    if (!yue2_generate(lm, &p->kv, prefixes, negatives, guidance, sampling, r.lm_seed, YUE2_PHASE_SEMANTIC, &drawn,
+                       cancelled, cancel_data)) {
+        return false;
+    }
+    codes->tokens = section;
+    codes->tokens.insert(codes->tokens.end(), drawn[0].tokens.begin(), drawn[0].tokens.end());
+    codes->truncated = drawn[0].truncated;
+    return true;
+}
+
 // Renders lm_batch_size songs times synth_batch_size variations, song-major:
 // track song * M + variation. Song i draws its tokens with lm_seed + i in
 // KV set i, variation j draws its noise with seed + j, and the M variations
-// of a song solve in one NAR graph over the set the AR left complete.
+// of a song solve in one NAR graph over the set the AR left complete. With
+// source_tokens, the song opens on the section of the source the request
+// names and the AR writes on from it.
 static bool pipeline_generate(Yue2Pipeline *          p,
                               const Yue2Request &     r,
                               std::vector<Yue2Song> * songs,
@@ -383,17 +446,23 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         return bpe_encode(tok, text);
     };
 
-    // A supplied stream is one song, the batch counter has nothing to draw
-    bool replay = !r.semantic_tokens.empty();
-    if (replay && r.lm_batch_size > 1) {
-        fprintf(stderr, "[Pipeline] Replay: lm_batch_size ignored\n");
+    // A supplied stream is replayed, a source section is continued; either
+    // is one song, the batch counter has nothing to draw
+    bool replay    = !r.semantic_tokens.empty();
+    bool continued = !r.source_tokens.empty();
+    if (replay && continued) {
+        fprintf(stderr, "[Pipeline] FATAL: semantic_tokens and source_tokens are exclusive\n");
+        return false;
     }
-    const int B = replay ? 1 : r.lm_batch_size;
+    if ((replay || continued) && r.lm_batch_size > 1) {
+        fprintf(stderr, "[Pipeline] Supplied stream: lm_batch_size ignored\n");
+    }
+    const int B = replay || continued ? 1 : r.lm_batch_size;
     const int M = r.synth_batch_size;
 
     // A supplied stream with no score renders without one, whatever the
     // mode: a score planned now is not the one the codes follow
-    if (replay && r.abc.empty()) {
+    if ((replay || continued) && r.abc.empty()) {
         cot = YUE2_COT_OFF;
     }
 
@@ -460,6 +529,11 @@ static bool pipeline_generate(Yue2Pipeline *          p,
         }
         codes[0].truncated = false;
         fprintf(stderr, "[Pipeline] Replay: %zu frames supplied\n", codes[0].tokens.size());
+    } else if (continued) {
+        if (!pipeline_continue_codes(p, lm, r, prefixes[0], negatives.empty() ? nullptr : &negatives[0], guidance,
+                                     &codes[0], cancelled, cancel_data)) {
+            return false;
+        }
     } else {
         // The requested length caps the budget of the stage, never raises it
         Yue2Sampling semantic = r.semantic_sampling;

@@ -494,8 +494,8 @@ static void handle_props(const httplib::Request &, httplib::Response & res) {
 
 // Validates what the pipeline would refuse anyway, so a bad request fails
 // fast with a 400 instead of occupying the worker
-static bool validate(const httplib::Request & req, httplib::Response & res, Yue2Request * r) {
-    if (!request_parse_json(r, req.body.c_str())) {
+static bool validate(const std::string & json, httplib::Response & res, Yue2Request * r) {
+    if (!request_parse_json(r, json.c_str())) {
         res.status = 400;
         res.set_content(json_string("error", "invalid JSON"), "application/json");
         return false;
@@ -540,6 +540,11 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
             return false;
         }
     }
+    if (!r->semantic_tokens.empty() && !r->source_tokens.empty()) {
+        res.status = 400;
+        res.set_content(json_string("error", "semantic_tokens and source_tokens are exclusive"), "application/json");
+        return false;
+    }
     request_resolve_seed(r);
     return true;
 }
@@ -564,7 +569,7 @@ static void run_transcribe(std::shared_ptr<Job> job, std::vector<float> audio, b
 }
 
 // Tokenize worker: the uploaded recording becomes its semantic codes, the
-// stream the semantic_tokens field of a request renders again.
+// stream a card keeps for its replay and for the continuations it opens.
 static void run_tokenize(std::shared_ptr<Job> job, std::vector<float> audio) {
     active_job_set(job);
     fprintf(stderr, "[Server] Tokenize job %s: %.1f s of audio\n", job->id.c_str(),
@@ -815,7 +820,7 @@ int main(int argc, char ** argv) {
 
     svr.Post("/synth", [](const httplib::Request & req, httplib::Response & res) {
         Yue2Request request;
-        if (!validate(req, res, &request)) {
+        if (!validate(req.body, res, &request)) {
             return;
         }
         auto job = job_create();
