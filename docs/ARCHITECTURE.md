@@ -167,6 +167,10 @@ a prefix plus budget that would not fit.
 The cost of STRICT is one reload of each half per song from the page
 cache, about a second on the pod, `--keep-loaded` removes it.
 
+The adapters of a request are part of the key of each half: a half under
+another adapter list is another module, which STRICT swaps like a
+quantization and `--keep-loaded` keeps next to the first.
+
 ## Pipeline
 
 ```
@@ -332,6 +336,40 @@ backend. Songs longer than a window run windows of 300 s with 200 s of
 overlap and 100 s of lookahead, each later window prefixed with the
 re-encoded events of the overlap. The tokenizer tables and the ABC
 spelling of every chord and key label travel in the GGUF metadata.
+
+### LoRA adapters (`src/adapter.h`, optional)
+
+```
+--adapters <dir>      every .safetensors file, every folder holding one
+  scan                keys normalized to the GGUF names, halves recorded, a key outside
+                      the backbone skips the adapter with the tensor at fault
+request adapters      [{name, scale}], each split onto the halves it changes
+  AR load             merged into self_attn.{q,k,v,o}_proj and mlp.{gate,up,down}_proj
+  NAR load            merged into nar_self_attn, nar_mlp, vae2llm and llm2vae
+```
+
+The community trains YuE2 adapters with AI Toolkit, ComfyUI, native YuE2
+trainers and slider tools, and the key layouts differ: `text_encoders.*`
+for the AR half and `diffusion_model.*` for the NAR half under ComfyUI,
+the NAR projections carrying the AR names there, `layers.N.nar_*` in the
+native files, `adapters.model-layers-N-*` in the sliders, `companion.*`
+and `io.*` around a bundled acoustic adapter. All normalize to the GGUF
+names. The fused `qkv_proj` and `gate_up_proj` split back onto the
+separate projections by rows of B, `(B @ A)[r0:r1] = B[r0:r1] @ A`, exact
+for a shared A and for a block diagonal fusion alike: the native and the
+ComfyUI release of one adapter merge to the same bytes.
+
+Terms on a tensor W, s the strength of the adapter: LoRA
+`W += s * alpha / rank * B @ A` (alpha from the module `.alpha`, then
+`adapter_config.json`, then the safetensors metadata, else the rank),
+diff `W += s * D`, full replacement `W += s * (F - W)` for `vae2llm` and
+`llm2vae`. The merge runs between the GGUF loads of a half and its
+`wctx_alloc`, on the staged copy of each projection, so the QKV and
+gate/up fusions concatenate adapted rows. Per tensor: the base
+dequantized on the host, every term of every stacked adapter summed in
+one backend graph, the sum quantized back to the GGUF type on the host
+once, rows split across threads. One adapter on both halves costs about
+1.5 s per half in Q8_0, 2 s in BF16, 3 to 4 s in the K-quants.
 
 ## Inference recipe
 
@@ -575,6 +613,13 @@ Audio encoder: `"mp3"`, `"wav16"`, `"wav24"`, `"wav32"`.
 **`mp3_bitrate`** (int, default `128`)
 MP3 encoder bitrate in kbps. WAV outputs ignore it.
 
+**`adapters`** (array, default empty)
+LoRA adapters stacked on the backbone, `[{"name": "x.safetensors",
+"scale": 1.0}]`, names of the `--adapters` directory. Each merges into the
+halves it changes at its own strength, a zero strength leaving them as
+they are. A replay request carries them, the song renders with the same
+weights.
+
 **`abc_sampling`**, **`semantic_sampling`** (objects)
 Per stage sampling presets, checkpoint values by default. Bounds enforced
 on both sides: temperature in [0, 5], top-p in (0, 1], top-k at least 1,
@@ -625,6 +670,7 @@ Optional:
   --lm-seed <N>          Token sampling seed
   --seed <N>             Acoustic noise seed
   --steps <N>            Flow matching steps
+  --adapters <dir>       Directory the adapters of the request are named in
 
 Debug:
   --score <path>         Also write the planned score
@@ -661,6 +707,7 @@ Required:
 
 Optional:
   --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe
+  --adapters <dir>       Directory of LoRA adapters requests can stack
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
   --max-batch <N>        Song batch limit, one KV set each (default: 1)
@@ -687,7 +734,8 @@ POST /synth                     Submit a generation job, returns job ID
   response: {"id":"1a2b..."}
   400 on malformed JSON, unknown cot mode, unknown output_format,
   steps < 1, lm_batch_size outside [1, --max-batch], synth_batch_size
-  outside [1, 9], or a sampling preset outside the protocol bounds
+  outside [1, 9], a sampling preset outside the protocol bounds, or an
+  adapter missing from the --adapters directory
 
 POST /transcribe                Submit a transcription job, returns job ID
   body: multipart/form-data, an "audio" part (WAV or MP3) and an optional
@@ -724,9 +772,9 @@ GET  /                          Embedded WebUI (gzipped HTML)
 
 Error responses are JSON: `{"error":"message"}`.
 
-**GET /props** returns the sample rate, the frame rate, the context, and
-the full default request, which is the source of truth for the WebUI
-placeholders:
+**GET /props** returns the sample rate, the frame rate, the context, the
+adapter directory with the halves each entry changes, and the full default
+request, which is the source of truth for the WebUI placeholders:
 
 ```json
 {
@@ -736,6 +784,7 @@ placeholders:
   "sample_rate": 48000,
   "frame_rate": 25,
   "context": 24576,
+  "adapters": [ { "name": "lorn.safetensors", "ar": true, "nar": true } ],
   "defaults": { "cot": "full", "steps": 32, "abc_sampling": { }, "semantic_sampling": { }, "...": null }
 }
 ```

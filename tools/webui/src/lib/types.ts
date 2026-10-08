@@ -12,6 +12,13 @@ export interface Yue2Sampling {
 	max_tokens?: number;
 }
 
+// one adapter of a request: an entry of the server adapter directory and its
+// strength, 1 when unset
+export interface Yue2Adapter {
+	name: string;
+	scale?: number | string;
+}
+
 export interface Yue2Request {
 	style: string;
 	lyrics?: string;
@@ -30,6 +37,7 @@ export interface Yue2Request {
 	output_format?: string;
 	peak_clip?: number;
 	mp3_bitrate?: number;
+	adapters?: Yue2Adapter[];
 }
 
 // GET /props response
@@ -40,6 +48,8 @@ export interface Yue2Props {
 	sample_rate: number;
 	frame_rate: number;
 	context: number;
+	// the adapter directory, each entry with the halves it changes
+	adapters: { name: string; ar: boolean; nar: boolean }[];
 	defaults: Yue2Request;
 }
 

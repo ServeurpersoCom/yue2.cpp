@@ -39,13 +39,17 @@ struct ModelKeyHash {
     size_t operator()(const ModelKey & k) const noexcept {
         size_t h = std::hash<int>{}(static_cast<int>(k.kind));
         h ^= std::hash<std::string>{}(k.path) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        for (const AdapterUse & a : k.adapters) {
+            h ^= std::hash<std::string>{}(a.path) + std::hash<float>{}(a.scale) + 0x9e3779b97f4a7c15ULL + (h << 6) +
+                 (h >> 2);
+        }
         return h;
     }
 };
 
 struct ModelKeyEq {
     bool operator()(const ModelKey & a, const ModelKey & b) const noexcept {
-        return a.kind == b.kind && a.path == b.path;
+        return a.kind == b.kind && a.path == b.path && a.adapters == b.adapters;
     }
 };
 
@@ -221,7 +225,7 @@ Qwen3LM * store_require_lm(ModelStore * s, const ModelKey & k) {
     }
     Timer     t;
     Qwen3LM * m = new Qwen3LM();
-    if (!qw3lm_load(m, k.path.c_str())) {
+    if (!qw3lm_load(m, k.path.c_str(), k.adapters)) {
         delete m;
         return nullptr;
     }
@@ -239,7 +243,7 @@ Yue2NAR * store_require_nar(ModelStore * s, const ModelKey & k) {
     }
     Timer     t;
     Yue2NAR * m = new Yue2NAR();
-    if (!nar_load(m, k.path.c_str())) {
+    if (!nar_load(m, k.path.c_str(), k.adapters)) {
         delete m;
         return nullptr;
     }

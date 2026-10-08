@@ -97,6 +97,15 @@ Transcribe score or Transcribe melody from the card menu: the score lands
 in the score field, pick the matching mode, add your lyrics and a style,
 and the model covers the song.
 
+## Adapters
+
+Drop LoRA adapters in the `adapters/` folder and restart the server. Every
+format the community publishes is read: AI Toolkit and ComfyUI single files,
+native YuE2 trainer files and folders with an `adapter_config.json`. Pick
+them in the Models menu of the WebUI, as many as you like, each with its
+own strength; each one merges into the half of the backbone it was trained
+on, at load time.
+
 ## Pipeline
 
 ```
@@ -145,6 +154,7 @@ Required:
 
 Optional:
   --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe
+  --adapters <dir>       Directory of LoRA adapters requests can stack
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
   --max-batch <N>        Song batch limit, one KV set each (default: 1)

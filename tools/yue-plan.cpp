@@ -112,7 +112,7 @@ int main(int argc, char ** argv) {
     }
 
     Qwen3LM lm;
-    if (!qw3lm_load(&lm, model_path)) {
+    if (!qw3lm_load(&lm, model_path, {})) {
         return 1;
     }
     lm.use_flash_attn = lm.use_flash_attn && !no_fa;

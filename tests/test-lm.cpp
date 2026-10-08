@@ -43,7 +43,7 @@ int main(int argc, char ** argv) {
     int N = (int) seqs.size();
 
     Qwen3LM lm;
-    if (!qw3lm_load(&lm, argv[1])) {
+    if (!qw3lm_load(&lm, argv[1], {})) {
         return 1;
     }
     lm.clamp_fp16 = clamp;

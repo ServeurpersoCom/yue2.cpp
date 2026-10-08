@@ -46,6 +46,7 @@ static void print_usage(const char * prog) {
             "  --lm-seed <N>          Token sampling seed\n"
             "  --seed <N>             Acoustic noise seed\n"
             "  --steps <N>            Flow matching steps\n"
+            "  --adapters <dir>       Directory the adapters of the request are named in\n"
             "\n"
             "Debug:\n"
             "  --score <path>         Also write the planned score\n"
@@ -106,6 +107,8 @@ int main(int argc, char ** argv) {
             tokens_path = argv[++i];
         } else if (!strcmp(argv[i], "--latent") && !last) {
             latent_path = argv[++i];
+        } else if (!strcmp(argv[i], "--adapters") && !last) {
+            params.adapters_dir = argv[++i];
         } else if (!strcmp(argv[i], "--max-seq") && !last) {
             params.max_seq = atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--vae-core") && !last) {

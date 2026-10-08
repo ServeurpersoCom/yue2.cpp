@@ -38,8 +38,9 @@
 // gets evicted, following the policy above set at creation time.
 //
 // Keys
-//   A module is uniquely identified by (kind, path). Two requires with the
-//   same key return the same instance.
+//   A module is uniquely identified by (kind, path, adapters). Two requires
+//   with the same key return the same instance. A half under another
+//   adapter list is another module, a swap like a quantization swap.
 //
 // Refcounting
 //   Each module has a refcount. require increments it, release decrements.
@@ -60,6 +61,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 struct ModelStore;
 
@@ -71,8 +73,9 @@ enum ModelKind {
 };
 
 struct ModelKey {
-    ModelKind   kind;
-    std::string path;  // GGUF path the module is loaded from
+    ModelKind               kind;
+    std::string             path;      // GGUF path the module is loaded from
+    std::vector<AdapterUse> adapters;  // merged at load, the LM and NAR halves only
 };
 
 enum EvictPolicy {

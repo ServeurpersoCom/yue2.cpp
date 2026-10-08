@@ -74,7 +74,7 @@ int main(int argc, char ** argv) {
     }
 
     Qwen3LM lm;
-    if (!qw3lm_load(&lm, gguf_path)) {
+    if (!qw3lm_load(&lm, gguf_path, {})) {
         return 1;
     }
     lm.clamp_fp16 = clamp;
@@ -85,7 +85,7 @@ int main(int argc, char ** argv) {
     }
 
     Yue2NAR nar;
-    if (!nar_load(&nar, gguf_path)) {
+    if (!nar_load(&nar, gguf_path, {})) {
         qw3lm_free(&lm);
         return 1;
     }

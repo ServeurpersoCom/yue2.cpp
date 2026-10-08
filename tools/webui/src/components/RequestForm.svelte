@@ -20,6 +20,24 @@
 
 	let d = $derived(app.props?.defaults);
 
+	// The adapter directory of the server. The stacked list grows one menu at
+	// a time: an adapter picked in the trailing menu opens another, Disabled
+	// takes its row out.
+	let adapterList = $derived(app.props?.adapters ?? []);
+	let adapterRows = $derived([...(app.request.adapters ?? []), { name: '' }]);
+
+	function pickAdapter(i: number, name: string) {
+		const list = app.request.adapters ?? [];
+		if (!name) list.splice(i, 1);
+		else if (i < list.length) list[i].name = name;
+		else list.push({ name });
+		app.request.adapters = list;
+	}
+
+	function halves(e: { ar: boolean; nar: boolean }): string {
+		return e.ar && e.nar ? 'AR + NAR' : e.ar ? 'AR' : 'NAR';
+	}
+
 	// The mode menu shows the published default until a mode is picked, so
 	// the request carries a cot only when it is yours.
 	let cot = $derived(app.request.cot || d?.cot || '');
@@ -185,6 +203,9 @@
 		busy = true;
 		try {
 			const req = buildRequest();
+			// An adapter the server no longer lists stays visible in its menu
+			// and out of the run
+			req.adapters = req.adapters?.filter((a) => adapterList.some((e) => e.name === a.name));
 			// Both seeds are resolved here so the stored request replays the
 			// exact track, the token draw and the acoustic noise alike
 			const userLmSeed = num(req.lm_seed);
@@ -282,6 +303,42 @@
 		<button type="button" onclick={reset} title="Reset prompt"><RotateCcw size={14} /> Reset</button
 		>
 	</div>
+
+	{#if adapterList.length}
+		<details>
+			<summary>Models</summary>
+			<div class="details-body">
+				{#each adapterRows as a, i}
+					<div class="field-row">
+						<span class="field-label">LoRA</span>
+						<select
+							class="field-select"
+							value={a.name}
+							onchange={(e) => pickAdapter(i, e.currentTarget.value)}
+							title="Adapter merged into the halves it changes at load time. Scanned from the --adapters directory: a .safetensors file, or a folder holding one next to its adapter_config.json."
+						>
+							<option value="">Disabled</option>
+							{#if a.name && !adapterList.some((e) => e.name === a.name)}
+								<option value={a.name} disabled>{a.name}</option>
+							{/if}
+							{#each adapterList as e}
+								<option value={e.name}>{e.name} ({halves(e)})</option>
+							{/each}
+						</select>
+						{#if a.name && app.request.adapters}
+							<input
+								type="text"
+								class="scale-input"
+								placeholder="1.0"
+								bind:value={app.request.adapters[i].scale}
+								title="Adapter strength. Lower it if you hear artifacts, raise it for a stronger effect."
+							/>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		</details>
+	{/if}
 
 	<div class="section-title">Name</div>
 	<input type="text" bind:value={app.name} placeholder="Untitled" />
@@ -730,6 +787,10 @@
 	.field-select {
 		flex: 1;
 		min-width: 0;
+	}
+	.scale-input {
+		width: 4rem;
+		flex-shrink: 0;
 	}
 
 	.meta-grid {

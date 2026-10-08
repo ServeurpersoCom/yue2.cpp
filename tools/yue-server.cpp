@@ -454,6 +454,16 @@ static void handle_props(const httplib::Request &, httplib::Response & res) {
     yyjson_mut_obj_add_int(doc, root, "frame_rate", YUE2_FRAME_RATE);
     yyjson_mut_obj_add_int(doc, root, "context", YUE2_CONTEXT);
 
+    // The adapter directory, each entry with the halves it changes
+    yyjson_mut_val * adapters = yyjson_mut_arr(doc);
+    for (const AdapterEntry & e : g_pipeline.adapters) {
+        yyjson_mut_val * item = yyjson_mut_arr_add_obj(doc, adapters);
+        yyjson_mut_obj_add_strncpy(doc, item, "name", e.name.c_str(), e.name.size());
+        yyjson_mut_obj_add_bool(doc, item, "ar", e.halves & ADAPTER_AR);
+        yyjson_mut_obj_add_bool(doc, item, "nar", e.halves & ADAPTER_NAR);
+    }
+    yyjson_mut_obj_add_val(doc, root, "adapters", adapters);
+
     // The defaults are the request schema itself, serialized by the request
     // writer and grafted here: one source of truth, one float formatting
     std::string  def_json = request_to_json(&d, false);
@@ -511,6 +521,13 @@ static bool validate(const httplib::Request & req, httplib::Response & res, Yue2
         res.status = 400;
         res.set_content(json_string("error", "sampling preset outside the protocol bounds"), "application/json");
         return false;
+    }
+    for (const Yue2Adapter & a : r->adapters) {
+        if (!adapter_find(g_pipeline.adapters, a.name)) {
+            res.status = 400;
+            res.set_content(json_string("error", "adapter not found: " + a.name), "application/json");
+            return false;
+        }
     }
     request_resolve_seed(r);
     return true;
@@ -594,6 +611,7 @@ static void print_usage(const char * prog) {
             "\n"
             "Optional:\n"
             "  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe\n"
+            "  --adapters <dir>       Directory of LoRA adapters requests can stack\n"
             "  --host <addr>          Listen address (default: 0.0.0.0)\n"
             "  --port <N>             Listen port (default: 8087)\n"
             "  --max-batch <N>        Song batch limit, one KV set each (default: 1)\n"
@@ -626,6 +644,8 @@ int main(int argc, char ** argv) {
             g_vae_path = argv[++i];
         } else if (!strcmp(argv[i], "--transcriber") && !last) {
             g_transcriber_path = argv[++i];
+        } else if (!strcmp(argv[i], "--adapters") && !last) {
+            params.adapters_dir = argv[++i];
         } else if (!strcmp(argv[i], "--host") && !last) {
             host = argv[++i];
         } else if (!strcmp(argv[i], "--port") && !last) {

@@ -13,4 +13,5 @@ set -eu
     --port 8087 \
     --model models/YuE2-3B-Q8_0.gguf \
     --vae models/YuE2-Vae-F32.gguf \
-    --transcriber models/SheetSage2-Q8_0.gguf
+    --transcriber models/SheetSage2-Q8_0.gguf \
+    --adapters ./adapters

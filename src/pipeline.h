@@ -13,7 +13,9 @@
 // left complete, end token included, so a generated song that fits one
 // chunk never prefills, and the cache outlives both halves. It lives for
 // one generate under the strict policy, so the GPU is empty between
-// requests, and stays under --keep-loaded.
+// requests, and stays under --keep-loaded. The adapters of a request merge
+// into the halves at load, a half under another adapter list being another
+// module of the store.
 
 #include "generate.h"
 #include "model-store.h"
@@ -38,23 +40,25 @@
 // resident; max_seq and max_batch size the cache, which the pipeline owns
 // and never evicts.
 struct Yue2PipelineParams {
-    int  max_seq    = 0;              // 0 = model context, the whole 24576
-    int  max_batch  = 1;              // song batch limit, one KV set per song, two under guidance
-    bool no_fa      = false;          // disable flash attention
-    bool clamp_fp16 = false;          // clamp hidden states on sub-Ampere CUDA
-    int  vae_core   = 512;            // VAE tile core frames
-    int  vae_halo   = 16;             // VAE tile halo frames
+    int  max_seq    = 0;                  // 0 = model context, the whole 24576
+    int  max_batch  = 1;                  // song batch limit, one KV set per song, two under guidance
+    bool no_fa      = false;              // disable flash attention
+    bool clamp_fp16 = false;              // clamp hidden states on sub-Ampere CUDA
+    int  vae_core   = 512;                // VAE tile core frames
+    int  vae_halo   = 16;                 // VAE tile halo frames
 
-    const char * dump_dir = nullptr;  // probe dumps of the first track for the cossim harness
+    const char * dump_dir     = nullptr;  // probe dumps of the first track for the cossim harness
+    const char * adapters_dir = nullptr;  // the adapters requests can stack, none without it
 };
 
 struct Yue2Pipeline {
-    ModelStore *       store = nullptr;   // borrowed, owned by the tool
-    std::string        model_path;        // the backbone GGUF, both halves and the tokenizer
-    std::string        vae_path;
-    std::string        transcriber_path;  // the SheetSage2 GGUF, empty without one
-    Yue2PipelineParams params;
-    DebugDumper        dumper;
+    ModelStore *              store = nullptr;   // borrowed, owned by the tool
+    std::string               model_path;        // the backbone GGUF, both halves and the tokenizer
+    std::string               vae_path;
+    std::string               transcriber_path;  // the SheetSage2 GGUF, empty without one
+    Yue2PipelineParams        params;
+    std::vector<AdapterEntry> adapters;          // the adapter directory, scanned at configure
+    DebugDumper               dumper;
 
     // The cache, bound at configure to its config with the context override
     // and to the shared backend, held for the process lifetime
@@ -125,6 +129,9 @@ static bool pipeline_configure(Yue2Pipeline *             p,
     if (!store_bpe(p->store, model_path)) {
         return false;
     }
+    if (params.adapters_dir) {
+        p->adapters = adapter_scan(params.adapters_dir);
+    }
 
     Qwen3LMConfig cfg;
     if (!qw3lm_read_config(model_path, &cfg)) {
@@ -148,12 +155,37 @@ static void pipeline_free(Yue2Pipeline * p) {
     p->configured = false;
 }
 
+// The adapters of a request resolved to their files, split by the half each
+// changes. A zero strength leaves the halves as they are.
+static bool pipeline_adapters(const Yue2Pipeline *      p,
+                              const Yue2Request &       r,
+                              std::vector<AdapterUse> * ar,
+                              std::vector<AdapterUse> * nar) {
+    for (const Yue2Adapter & a : r.adapters) {
+        const AdapterEntry * e = adapter_find(p->adapters, a.name);
+        if (!e) {
+            fprintf(stderr, "[Pipeline] FATAL: adapter %s not found\n", a.name.c_str());
+            return false;
+        }
+        if (a.scale == 0.0f) {
+            continue;
+        }
+        if (e->halves & ADAPTER_AR) {
+            ar->push_back({ e->path, a.scale });
+        }
+        if (e->halves & ADAPTER_NAR) {
+            nar->push_back({ e->path, a.scale });
+        }
+    }
+    return true;
+}
+
 // Require helpers: one place builds the store key of each module from the
-// configured paths, and applies the runtime knobs after every require
-// (idempotent on cache hits). The NAR bakes them into its graph at build
-// time, the LM reads them at every forward.
-static Qwen3LM * require_lm(Yue2Pipeline * p) {
-    ModelKey  k = { MODEL_LM, p->model_path };
+// configured paths and the adapters of the request, and applies the runtime
+// knobs after every require (idempotent on cache hits). The NAR bakes them
+// into its graph at build time, the LM reads them at every forward.
+static Qwen3LM * require_lm(Yue2Pipeline * p, const std::vector<AdapterUse> & adapters) {
+    ModelKey  k = { MODEL_LM, p->model_path, adapters };
     Qwen3LM * m = store_require_lm(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
@@ -162,8 +194,8 @@ static Qwen3LM * require_lm(Yue2Pipeline * p) {
     return m;
 }
 
-static Yue2NAR * require_nar(Yue2Pipeline * p) {
-    ModelKey  k = { MODEL_NAR, p->model_path };
+static Yue2NAR * require_nar(Yue2Pipeline * p, const std::vector<AdapterUse> & adapters) {
+    ModelKey  k = { MODEL_NAR, p->model_path, adapters };
     Yue2NAR * m = store_require_nar(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
@@ -173,12 +205,12 @@ static Yue2NAR * require_nar(Yue2Pipeline * p) {
 }
 
 static VAEGGML * require_vae(Yue2Pipeline * p) {
-    ModelKey k = { MODEL_VAE, p->vae_path };
+    ModelKey k = { MODEL_VAE, p->vae_path, {} };
     return store_require_vae(p->store, k);
 }
 
 static SheetSage2 * require_ss2(Yue2Pipeline * p) {
-    ModelKey     k = { MODEL_SS2, p->transcriber_path };
+    ModelKey     k = { MODEL_SS2, p->transcriber_path, {} };
     SheetSage2 * m = store_require_ss2(p->store, k);
     if (m) {
         m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
@@ -239,6 +271,10 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     if (!yue2_sampling_valid(r.abc_sampling, "abc") || !yue2_sampling_valid(r.semantic_sampling, "semantic")) {
         return false;
     }
+    std::vector<AdapterUse> ar_adapters, nar_adapters;
+    if (!pipeline_adapters(p, r, &ar_adapters, &nar_adapters)) {
+        return false;
+    }
 
     KvScope kv_scope = { p };
 
@@ -267,7 +303,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     std::optional<ModelHandle> lm_hold;
     Qwen3LM *                  lm = nullptr;
     if (planned || !replay) {
-        lm = require_lm(p);
+        lm = require_lm(p, ar_adapters);
         if (!lm) {
             return false;
         }
@@ -422,7 +458,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             if (kept < ar_len) {
                 nar_hold.reset();
                 nar                = nullptr;
-                Qwen3LM * lm_chunk = require_lm(p);
+                Qwen3LM * lm_chunk = require_lm(p, ar_adapters);
                 if (!lm_chunk) {
                     return false;
                 }
@@ -431,7 +467,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                 qw3lm_forward(lm_chunk, &p->kv, sequence.data() + kept, ar_len - kept, i, probe.data(), row0, rows);
             }
             if (!nar) {
-                nar = require_nar(p);
+                nar = require_nar(p, nar_adapters);
                 if (!nar) {
                     return false;
                 }

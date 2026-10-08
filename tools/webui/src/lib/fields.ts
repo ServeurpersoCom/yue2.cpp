@@ -110,6 +110,10 @@ export function buildSparse(r: Yue2Request): Yue2Request {
 		const val = resolveField(f, get(r, f.key));
 		if (val !== undefined) set(out, f.key, val);
 	}
+	const adapters = (r.adapters || [])
+		.filter((a) => a.name)
+		.map((a) => ({ name: a.name, scale: num(a.scale) ?? 1 }));
+	if (adapters.length) out.adapters = adapters;
 	for (const s of SAMPLING_FIELDS) {
 		const preset = resolveSampling(get(r, s.key));
 		if (preset !== undefined) {
@@ -124,7 +128,7 @@ export function buildSparse(r: Yue2Request): Yue2Request {
 // an empty request: every section cleared, so a full reset and a section
 // clear leave a field in the exact same state
 export function emptyRequest(): Yue2Request {
-	const r: Yue2Request = { style: '', abc_sampling: {}, semantic_sampling: {} };
+	const r: Yue2Request = { style: '', abc_sampling: {}, semantic_sampling: {}, adapters: [] };
 	for (const f of FIELDS) {
 		set(r, f.key, f.type === 'str' ? '' : undefined);
 	}

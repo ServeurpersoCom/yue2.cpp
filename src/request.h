@@ -9,6 +9,13 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
+
+// One adapter of a request: an entry of the --adapters directory and its strength
+struct Yue2Adapter {
+    std::string name;
+    float       scale;  // 1.0
+};
 
 struct Yue2Request {
     // text content
@@ -69,6 +76,10 @@ struct Yue2Request {
     // MP3 encoder bitrate in kbps, used when output_format is "mp3".
     // WAV outputs ignore this field.
     int mp3_bitrate;  // 128
+
+    // adapters stacked on the backbone, each merged into the halves it
+    // changes at its own strength
+    std::vector<Yue2Adapter> adapters;  // empty
 };
 
 // fills every field with its default
