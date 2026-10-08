@@ -1153,7 +1153,7 @@ static bool ss2_transcribe(SheetSage2 *        m,
             return false;
         }
         if (dbg->enabled) {
-            std::vector<float> ids(tokens.begin(), tokens.end());
+            std::vector<float> ids = debug_ids(tokens);
             char               name[32];
             snprintf(name, sizeof(name), "tokens_%d", index);
             debug_dump_1d(dbg, name, ids.data(), (int) ids.size());

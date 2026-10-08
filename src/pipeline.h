@@ -515,7 +515,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             // sequence the latent block attends to, then the solver probes
             const DebugDumper * dbg = i == 0 && start == 0 ? &p->dumper : &quiet;
             if (dbg->enabled) {
-                std::vector<float> ids(sequence.begin(), sequence.end());
+                std::vector<float> ids = debug_ids(sequence);
                 debug_dump_1d(dbg, "ar_ids", ids.data(), (int) ids.size());
             }
 

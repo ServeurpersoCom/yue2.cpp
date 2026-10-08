@@ -348,7 +348,7 @@ static bool atok_codes(AudioTokenizer *           m,
         }
     }
     if (dbg->enabled) {
-        std::vector<float> as_float(codes->begin(), codes->end());
+        std::vector<float> as_float = debug_ids(*codes);
         debug_dump_2d(dbg, "tokenizer-codes", as_float.data(), T, 1);
     }
     return true;
