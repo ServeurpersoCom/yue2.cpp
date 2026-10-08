@@ -4,7 +4,14 @@
 	import { RotateCcw, Download, FolderOpen, X } from '@lucide/svelte';
 	import { app, toast, setRequest } from '../lib/state.svelte.js';
 	import { example } from '../lib/example.js';
-	import { synthSubmit, pollJob, jobResultTracks, cancelJob } from '../lib/api.js';
+	import {
+		synthSubmit,
+		pollJob,
+		jobResultTracks,
+		cancelJob,
+		vaeDecode,
+		jobResultBlob
+	} from '../lib/api.js';
 	import { putSong, getAllSongs, saveJob, loadJob, clearJob } from '../lib/db.js';
 	import { num, buildSparse, clearSection, emptyRequest } from '../lib/fields.js';
 	import { COT_FULL, COT_MELODY, COT_OFF } from '../lib/config.js';
@@ -62,7 +69,8 @@
 				duration: 0,
 				score: r.abc || '',
 				request: r,
-				audio: tracks[i].audio
+				audio: tracks[i].audio,
+				latents: tracks[i].latents
 			};
 			song.id = await putSong(song);
 		}
@@ -129,6 +137,13 @@
 			return;
 		}
 
+		// VAE latents: decoded through /vae into the audio, a card holding
+		// both from the start
+		if (ext === 'vae') {
+			openLatents(file);
+			return;
+		}
+
 		// JSON and YAML share the same load path: parse, push the request into
 		// the form, and use the file basename as app.name.
 		const parsers: Record<string, (s: string) => Yue2Request> = {
@@ -181,6 +196,46 @@
 		app.songs.unshift(song);
 		app.name = name;
 		toast('Opened: ' + name, 4000, true);
+	}
+
+	// open VAE latents file: check the framing, decode it through /vae, then
+	// create a card with the audio and the latents, the latents a retouch
+	// starts from
+	async function openLatents(file: File) {
+		const buf = await file.arrayBuffer();
+		const T = buf.byteLength / 256;
+		if (buf.byteLength === 0 || buf.byteLength % 256 !== 0) {
+			toast('Invalid .vae file: size must be a multiple of 256 bytes (64 channels x f32)');
+			return;
+		}
+		if (app.props && T > app.props.context) {
+			toast(`Invalid .vae file: longer than the context (${app.props.context} frames)`);
+			return;
+		}
+		const latents = new Blob([buf], { type: 'application/octet-stream' });
+		const name = file.name.replace(/\.vae$/i, '') || 'Imported';
+		try {
+			const jobId = await vaeDecode(latents, buildRequest(), app.format);
+			await pollJob(jobId);
+			const song: Song = {
+				name,
+				format: app.format,
+				created: Date.now(),
+				style: '',
+				seed: 0,
+				duration: 0,
+				score: '',
+				request: emptyRequest(),
+				audio: await jobResultBlob(jobId),
+				latents
+			};
+			song.id = await putSong(song);
+			app.songs.unshift(song);
+			app.name = name;
+			toast('Opened: ' + name, 4000, true);
+		} catch (e: unknown) {
+			toast(e instanceof Error ? e.message : String(e));
+		}
 	}
 
 	// snapshot app.request into a clean Yue2Request with proper types.
@@ -286,7 +341,7 @@
 <form class="request-form" onsubmit={(e) => e.preventDefault()}>
 	<input
 		type="file"
-		accept=".json,.yml,.yaml,.mp3,.wav"
+		accept=".json,.yml,.yaml,.mp3,.wav,.vae"
 		bind:this={fileInput}
 		onchange={onFileSelected}
 		hidden

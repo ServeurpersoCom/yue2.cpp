@@ -67,6 +67,11 @@ export interface Song {
 	score: string;
 	request: Yue2Request;
 	audio: Blob;
+	// raw f32 [T * 64] latents the VAE decoder produced this audio from.
+	// Present for songs from /synth and for .vae files opened, computed on
+	// demand for an imported recording. A retouch starts from them instead
+	// of encoding the audio again.
+	latents?: Blob;
 	// user-marked favorite, persisted across reloads. Acts as a sticky
 	// flag for the bulk "Delete non-favorites" action.
 	favorite?: boolean;

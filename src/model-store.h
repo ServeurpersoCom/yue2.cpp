@@ -18,7 +18,7 @@
 //       evicting between them would thrash, so eviction operates on
 //       groups, not single modules:
 //         AR         = { LM }        the score and semantic stages
-//         SYNTH      = { NAR, VAE }  the flow matching and the decode, per song
+//         SYNTH      = { NAR, VAE, VAE_ENC } the flow matching, the decode, the encode
 //         TRANSCRIBE = { SS2, ATOK } the heads that listen to a recording
 //       Modules in the same group coexist freely. A require from another
 //       group evicts every idle module of the resident group.
@@ -58,6 +58,7 @@
 #include "nar.h"
 #include "qwen3-lm.h"
 #include "sheetsage.h"
+#include "vae-enc.h"
 #include "vae.h"
 
 #include <cstddef>
@@ -67,11 +68,12 @@
 struct ModelStore;
 
 enum ModelKind {
-    MODEL_LM,    // Qwen3LM  the AR half of the backbone GGUF
-    MODEL_NAR,   // Yue2NAR  the NAR half of the same GGUF
-    MODEL_VAE,   // VAEGGML  from the VAE GGUF
-    MODEL_SS2,   // SheetSage2 from the transcriber GGUF
-    MODEL_ATOK,  // AudioTokenizer from the audio tokenizer GGUF
+    MODEL_LM,       // Qwen3LM  the AR half of the backbone GGUF
+    MODEL_NAR,      // Yue2NAR  the NAR half of the same GGUF
+    MODEL_VAE,      // VAEGGML  from the VAE GGUF
+    MODEL_VAE_ENC,  // VAEEncoder from the same VAE GGUF
+    MODEL_SS2,      // SheetSage2 from the transcriber GGUF
+    MODEL_ATOK,     // AudioTokenizer from the audio tokenizer GGUF
 };
 
 struct ModelKey {
@@ -99,6 +101,7 @@ EvictPolicy  store_policy(const ModelStore * s);
 Qwen3LM *        store_require_lm(ModelStore * s, const ModelKey & k);
 Yue2NAR *        store_require_nar(ModelStore * s, const ModelKey & k);
 VAEGGML *        store_require_vae(ModelStore * s, const ModelKey & k);
+VAEEncoder *     store_require_vae_enc(ModelStore * s, const ModelKey & k);
 SheetSage2 *     store_require_ss2(ModelStore * s, const ModelKey & k);
 AudioTokenizer * store_require_atok(ModelStore * s, const ModelKey & k);
 

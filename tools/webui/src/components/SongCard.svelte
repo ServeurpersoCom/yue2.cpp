@@ -10,7 +10,8 @@
 		Type,
 		TriangleAlert,
 		Music,
-		AudioWaveform
+		AudioWaveform,
+		Cpu
 	} from '@lucide/svelte';
 	import { app, setRequest, toast } from '../lib/state.svelte.js';
 	import {
@@ -18,7 +19,9 @@
 		tokenizeSubmit,
 		pollJob,
 		jobResultTranscribe,
-		jobResultTokenize
+		jobResultTokenize,
+		vaeEncode,
+		jobResultBlob
 	} from '../lib/api.js';
 	import { deleteSong, putSong } from '../lib/db.js';
 	import type { Song } from '../lib/types.js';
@@ -50,6 +53,33 @@
 		a.download = `${safe}.${ext}`;
 		a.click();
 		URL.revokeObjectURL(url);
+	}
+
+	// Download the latents as a .vae file, which Open decodes back into a
+	// card holding both
+	function downloadLatents() {
+		if (!song.latents) return;
+		const url = URL.createObjectURL(song.latents);
+		const a = document.createElement('a');
+		a.href = url;
+		const safe = song.name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '') || 'song';
+		a.download = `${safe}.vae`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	// VAE encode alone: POST /vae with the audio of the card and keep the
+	// latents on it, for an imported recording a retouch will start from
+	async function encodeOnly() {
+		if (song.latents || song.id == null) return;
+		try {
+			const jobId = await vaeEncode(song.audio);
+			await pollJob(jobId);
+			song.latents = await jobResultBlob(jobId);
+			await putSong($state.snapshot(song));
+		} catch (e: unknown) {
+			toast(e instanceof Error ? e.message : String(e));
+		}
 	}
 
 	let confirmDeleteOpen = $state(false);
@@ -155,6 +185,13 @@
 		{ icon: Pencil, label: 'Edit prompt', onSelect: load },
 		{ icon: Type, label: 'Rename song', onSelect: openRename },
 		{ icon: Download, label: 'Download audio', onSelect: downloadAudio },
+		{ icon: Cpu, label: 'Compute VAE latents', onSelect: encodeOnly, disabled: !!song.latents },
+		{
+			icon: Download,
+			label: 'Download VAE latents',
+			onSelect: downloadLatents,
+			disabled: !song.latents
+		},
 		{ icon: Music, label: 'Transcribe score', onSelect: () => transcribe(false) },
 		{ icon: Music, label: 'Transcribe melody', onSelect: () => transcribe(true) },
 		{ icon: AudioWaveform, label: 'Tokenize audio', onSelect: tokenize },
@@ -191,6 +228,9 @@
 	<Waveform {song} bind:playing bind:time bind:dur />
 	<div class="card-footer">
 		<span class="format-badge">{song.format.toUpperCase()}</span>
+		{#if song.latents}
+			<span class="format-badge">VAE</span>
+		{/if}
 		<span class="timecode">{fmtPos(time)} / {fmtDur(dur)}</span>
 	</div>
 </div>

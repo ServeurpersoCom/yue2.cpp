@@ -130,8 +130,8 @@ decides what stays in VRAM following its eviction policy:
 
 - `EVICT_STRICT` (default, hardcoded in the CLIs): at most one
   coexistence group resident at a time. The AR group `{ LM }` runs the
-  score and the semantic stages, the synthesis group `{ NAR, VAE }` the
-  flow matching and the decode, so when the synthesis group is required
+  score and the semantic stages, the synthesis group `{ NAR, VAE,
+  VAE encoder }` the flow matching, the decode and the encode, so when the synthesis group is required
   the AR half has been released and is unloaded. The two halves of the
   backbone never coexist, the peak is the larger one. The heads that
   listen to a recording, `{ SS2, ATOK }` (the transcriber and the audio
@@ -802,14 +802,26 @@ POST /tokenize                  Submit a tokenization job, returns job ID
   400 without an audio part or on audio that does not decode
   the route is served when the server runs with --tokenizer
 
+POST /vae                       Submit a VAE job, returns job ID
+  body: multipart/form-data, exactly one of an "audio" part (WAV or MP3,
+  encode) or a "src_latents" part (raw f32 [T, 64] time major, the .vae
+  layout, decode), and an optional "request" part (JSON) whose
+  output_format, peak_clip and mp3_bitrate drive a decode
+  response: {"id":"1a2b..."}
+  400 with both parts or neither, on audio that does not decode, or on
+  latents that are not whole frames within the context
+
 GET  /job?id=N                  Poll job status
   response: {"status":"running|done|failed|cancelled"}
 
 GET  /job?id=N&result=1         Fetch job result
   multipart/mixed, boundary yue2-batch-boundary: per track, song-major,
   one application/json replay request part (the request carrying the
-  semantic stream, the score and the seeds of that track) then one
-  audio/mpeg or audio/wav part; for a transcription job, application/json,
+  semantic stream, the score and the seeds of that track), one
+  audio/mpeg or audio/wav part and one application/octet-stream part with
+  the latents the audio was decoded from (raw f32 [T, 64], the .vae
+  layout); for a VAE job, application/octet-stream latents from an encode
+  or the audio of a decode; for a transcription job, application/json,
   the score as {"abc":"X:1\n..."}; for a tokenization job,
   application/json, the codes as {"codes":"12046,8433,..."}
   404 while the result is not ready

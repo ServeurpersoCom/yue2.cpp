@@ -104,7 +104,10 @@ Transcribe score or Transcribe melody from the card menu: the score lands
 in the score field, pick the matching mode, add your lyrics and a style,
 and the model covers the song. Tokenize audio puts the semantic codes of
 the recording in the form instead: Generate renders the song again
-through YuE2, best with the realaudio NAR adapter selected.
+through YuE2, best with the realaudio NAR adapter selected. Every track
+keeps the VAE latents it was decoded from in the browser, the VAE badge
+of its card: download them as a .vae file, open one to get its card back,
+or compute them for a recording you opened.
 
 ## Adapters
 

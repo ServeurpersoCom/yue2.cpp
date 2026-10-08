@@ -17,12 +17,14 @@
 // into the halves at load, a half under another adapter list being another
 // module of the store.
 
+#include "audio-resample.h"
 #include "generate.h"
 #include "model-store.h"
 #include "nar.h"
 #include "request.h"
 #include "timer.h"
 #include "torch-cpu-rng.h"
+#include "vae-enc.h"
 #include "vae.h"
 
 #include <cstdlib>
@@ -208,6 +210,74 @@ static Yue2NAR * require_nar(Yue2Pipeline * p, const std::vector<AdapterUse> & a
 static VAEGGML * require_vae(Yue2Pipeline * p) {
     ModelKey k = { MODEL_VAE, p->vae_path, {} };
     return store_require_vae(p->store, k);
+}
+
+static VAEEncoder * require_vae_enc(Yue2Pipeline * p) {
+    ModelKey k = { MODEL_VAE_ENC, p->vae_path, {} };
+    return store_require_vae_enc(p->store, k);
+}
+
+// Latents [T_lat, 64] time major to 48 kHz planar stereo [2, T_audio]
+static bool pipeline_decode(Yue2Pipeline *       p,
+                            VAEGGML *            vae,
+                            const float *        latents,
+                            int                  T_lat,
+                            std::vector<float> * audio,
+                            int *                T_audio,
+                            bool (*cancelled)(void *),
+                            void * cancel_data) {
+    int max_T_audio = T_lat * YUE2_HOP;
+    audio->assign((size_t) 2 * max_T_audio, 0.0f);
+    *T_audio = vae_ggml_decode_tiled(vae, latents, T_lat, audio->data(), max_T_audio, p->params.vae_core,
+                                     p->params.vae_halo, cancelled, cancel_data);
+    if (*T_audio < 0) {
+        return false;
+    }
+    audio->resize((size_t) 2 * *T_audio);
+    return true;
+}
+
+// A recording to its latents: planar stereo at any rate, each channel
+// resampled to 48 kHz, through the VAE encoder; [T_lat, 64] time major
+static bool pipeline_encode(Yue2Pipeline *       p,
+                            const float *        planar,
+                            int                  T,
+                            int                  sr,
+                            std::vector<float> * latents,
+                            int *                T_lat) {
+    int                T_audio = T;
+    std::vector<float> channels[2];
+    for (int c = 0; c < 2; c++) {
+        if (sr == YUE2_SAMPLE_RATE) {
+            channels[c].assign(planar + (size_t) c * T, planar + (size_t) (c + 1) * T);
+            continue;
+        }
+        float * rs = audio_resample(planar + (size_t) c * T, T, sr, YUE2_SAMPLE_RATE, 1, &T_audio);
+        if (!rs) {
+            return false;
+        }
+        channels[c].assign(rs, rs + T_audio);
+        free(rs);
+    }
+    std::vector<float> interleaved((size_t) 2 * T_audio);
+    for (int t = 0; t < T_audio; t++) {
+        interleaved[(size_t) 2 * t]     = channels[0][(size_t) t];
+        interleaved[(size_t) 2 * t + 1] = channels[1][(size_t) t];
+    }
+    VAEEncoder * enc = require_vae_enc(p);
+    if (!enc) {
+        return false;
+    }
+    ModelHandle hold(p->store, enc);
+    int         max_T_lat = T_audio / YUE2_HOP + 1;
+    latents->assign((size_t) max_T_lat * YUE2_LATENT_DIM, 0.0f);
+    *T_lat = vae_enc_encode_tiled(enc, interleaved.data(), T_audio, latents->data(), max_T_lat, p->params.vae_core,
+                                  p->params.vae_halo);
+    if (*T_lat < 0) {
+        return false;
+    }
+    latents->resize((size_t) *T_lat * YUE2_LATENT_DIM);
+    return true;
 }
 
 static AudioTokenizer * require_atok(Yue2Pipeline * p) {
@@ -546,16 +616,12 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     }
     ModelHandle vae_hold(p->store, vae);
     for (size_t t = 0; t < songs->size(); t++) {
-        Yue2Song & song        = (*songs)[t];
-        int        max_T_audio = song.T_lat * YUE2_HOP;
+        Yue2Song & song = (*songs)[t];
         fprintf(stderr, "[VAE] Track %zu/%zu: song %zu variation %zu\n", t + 1, songs->size(), t / M, t % M);
-        song.audio.assign((size_t) 2 * max_T_audio, 0.0f);
-        song.T_audio = vae_ggml_decode_tiled(vae, song.latents.data(), song.T_lat, song.audio.data(), max_T_audio,
-                                             p->params.vae_core, p->params.vae_halo, cancelled, cancel_data);
-        if (song.T_audio < 0) {
+        if (!pipeline_decode(p, vae, song.latents.data(), song.T_lat, &song.audio, &song.T_audio, cancelled,
+                             cancel_data)) {
             return false;
         }
-        song.audio.resize((size_t) 2 * song.T_audio);
         if (t == 0 && p->dumper.enabled) {
             // Interleaved [T_audio, 2] like the torch reference dump
             std::vector<float> interleaved((size_t) 2 * song.T_audio);

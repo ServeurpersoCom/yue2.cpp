@@ -23,8 +23,8 @@
 namespace {
 
 // Coexistence groups: modules the pipeline interleaves too finely to
-// evict between. AR is the LM alone, SYNTH pairs the NAR and the VAE per
-// song.
+// evict between. AR is the LM alone, SYNTH holds the NAR with the VAE
+// decoder and encoder, TRANSCRIBE the heads that listen to a recording.
 enum ModelGroup {
     GROUP_AR,
     GROUP_SYNTH,
@@ -193,6 +193,11 @@ static void del_vae(void * p) {
     delete static_cast<VAEGGML *>(p);
 }
 
+static void del_vae_enc(void * p) {
+    vae_enc_free(static_cast<VAEEncoder *>(p));
+    delete static_cast<VAEEncoder *>(p);
+}
+
 static void del_ss2(void * p) {
     ss2_free(static_cast<SheetSage2 *>(p));
     delete static_cast<SheetSage2 *>(p);
@@ -214,6 +219,10 @@ static size_t bytes_of_nar(const Yue2NAR * m) {
 }
 
 static size_t bytes_of_vae(const VAEGGML * m) {
+    return m && m->buf ? ggml_backend_buffer_get_size(m->buf) : 0;
+}
+
+static size_t bytes_of_vae_enc(const VAEEncoder * m) {
     return m && m->buf ? ggml_backend_buffer_get_size(m->buf) : 0;
 }
 
@@ -273,6 +282,21 @@ VAEGGML * store_require_vae(ModelStore * s, const ModelKey & k) {
     vae_ggml_load(m, k.path.c_str());
     install_entry(s, k, m, bytes_of_vae(m), "VAE", del_vae);
     fprintf(stderr, "[Store] Load VAE: %.0f ms\n", t.ms());
+    return m;
+}
+
+VAEEncoder * store_require_vae_enc(ModelStore * s, const ModelKey & k) {
+    if (auto * hit = cache_hit<VAEEncoder>(s, k)) {
+        return hit;
+    }
+    if (s->policy == EVICT_STRICT) {
+        evict_conflicts(s, k);
+    }
+    Timer        t;
+    VAEEncoder * m = new VAEEncoder();
+    vae_enc_load(m, k.path.c_str());
+    install_entry(s, k, m, bytes_of_vae_enc(m), "VAE-ENC", del_vae_enc);
+    fprintf(stderr, "[Store] Load VAE-ENC: %.0f ms\n", t.ms());
     return m;
 }
 
