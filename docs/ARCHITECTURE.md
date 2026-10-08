@@ -670,7 +670,7 @@ Optional:
   --lm-seed <N>          Token sampling seed
   --seed <N>             Acoustic noise seed
   --steps <N>            Flow matching steps
-  --adapters <dir>       Directory the adapters of the request are named in
+  --adapters <dir>       Directory of LoRA adapters the request names
 
 Debug:
   --score <path>         Also write the planned score
@@ -707,7 +707,7 @@ Required:
 
 Optional:
   --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe
-  --adapters <dir>       Directory of LoRA adapters requests can stack
+  --adapters <dir>       Directory of LoRA adapters a request can stack
   --host <addr>          Listen address (default: 0.0.0.0)
   --port <N>             Listen port (default: 8087)
   --max-batch <N>        Song batch limit, one KV set each (default: 1)

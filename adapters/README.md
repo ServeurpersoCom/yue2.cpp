@@ -6,12 +6,12 @@ the halves of the backbone each one changes, AR (the score and the codes),
 NAR (the acoustics) or both, and the WebUI stacks any number of them, each
 with its own strength.
 
-| Trainer              | Layout                                   | Alpha source                        |
-|----------------------|------------------------------------------|-------------------------------------|
-| AI Toolkit, ComfyUI  | single `.safetensors`                    | per module `.alpha`, else the rank  |
-| Native YuE2 trainers | single `.safetensors`                    | `__metadata__` alpha, else the rank |
-| Folder trainers      | `.safetensors` + `adapter_config.json`   | `lora_alpha` or `alpha`             |
-| Sliders              | single `.safetensors`                    | per module `.alpha`                 |
+| Trainer              | Layout                                 | Alpha source                        |
+|----------------------|----------------------------------------|-------------------------------------|
+| AI Toolkit, ComfyUI  | single `.safetensors`                  | per module `.alpha`, else the rank  |
+| Native YuE2 trainers | single `.safetensors`                  | `__metadata__` alpha, else the rank |
+| Folder trainers      | `.safetensors` + `adapter_config.json` | `lora_alpha` or `alpha`             |
+| Sliders              | single `.safetensors`                  | per module `.alpha`                 |
 
 ComfyUI and AI Toolkit files carry `text_encoders.*` for the AR half and
 `diffusion_model.*` for the NAR half, with fused `qkv_proj` and

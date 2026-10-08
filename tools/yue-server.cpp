@@ -611,7 +611,7 @@ static void print_usage(const char * prog) {
             "\n"
             "Optional:\n"
             "  --transcriber <gguf>   SheetSage2 GGUF, enables /transcribe\n"
-            "  --adapters <dir>       Directory of LoRA adapters requests can stack\n"
+            "  --adapters <dir>       Directory of LoRA adapters a request can stack\n"
             "  --host <addr>          Listen address (default: 0.0.0.0)\n"
             "  --port <N>             Listen port (default: 8087)\n"
             "  --max-batch <N>        Song batch limit, one KV set each (default: 1)\n"

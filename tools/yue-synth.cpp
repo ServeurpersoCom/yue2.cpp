@@ -46,7 +46,7 @@ static void print_usage(const char * prog) {
             "  --lm-seed <N>          Token sampling seed\n"
             "  --seed <N>             Acoustic noise seed\n"
             "  --steps <N>            Flow matching steps\n"
-            "  --adapters <dir>       Directory the adapters of the request are named in\n"
+            "  --adapters <dir>       Directory of LoRA adapters the request names\n"
             "\n"
             "Debug:\n"
             "  --score <path>         Also write the planned score\n"
