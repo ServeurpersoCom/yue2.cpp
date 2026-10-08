@@ -3,7 +3,7 @@
 // Policy mirrors llama-quantize: important tensors (v_proj, down_proj) get
 // bumped in S/M variants, embed_tokens and lm_head always Q6_K, norms promoted to F32.
 // The VAE ships native, its weights carry the audio and survive nothing. The
-// audio encoder and the transcriber head quantize their linear projections
+// audio encoder and the two heads on it quantize their linear projections
 // alone: convolutions, tables, positions and LoRA factors stay F32.
 // Streaming write: one tensor at a time, low memory footprint for small configs.
 //
@@ -98,10 +98,13 @@ static bool is_embed(const char * name) {
 // Should this tensor be quantized at all? The audio encoder and the
 // transcriber head keep their convolution kernels (3D), the mel filterbank,
 // the learned positions and the LoRA factors exact, and quantize the linear
-// projections alone.
+// projections alone; the audio tokenizer keeps its learned positions exact.
 static bool should_quantize(int n_dims, const char * arch, const char * name) {
     if (strstr(arch, "vae") != nullptr) {
         return false;
+    }
+    if (strstr(arch, "tokenizer") != nullptr) {
+        return n_dims == 2 && strcmp(name, "pos") != 0;
     }
     if (strstr(arch, "mert") != nullptr || strstr(arch, "sheetsage") != nullptr) {
         return n_dims == 2 && strstr(name, "mel_scale.fb") == nullptr && strstr(name, "embed_positions") == nullptr &&

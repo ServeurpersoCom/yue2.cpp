@@ -32,7 +32,7 @@ enum ModelGroup {
 };
 
 static ModelGroup group_of(ModelKind kind) {
-    return kind == MODEL_LM ? GROUP_AR : (kind == MODEL_SS2 ? GROUP_TRANSCRIBE : GROUP_SYNTH);
+    return kind == MODEL_LM ? GROUP_AR : (kind == MODEL_SS2 || kind == MODEL_ATOK ? GROUP_TRANSCRIBE : GROUP_SYNTH);
 }
 
 struct ModelKeyHash {
@@ -198,6 +198,11 @@ static void del_ss2(void * p) {
     delete static_cast<SheetSage2 *>(p);
 }
 
+static void del_atok(void * p) {
+    atok_free(static_cast<AudioTokenizer *>(p));
+    delete static_cast<AudioTokenizer *>(p);
+}
+
 // Weight buffer size helpers: the two halves expose a WeightCtx at
 // m->wctx.buffer, the VAE exposes m->buf directly.
 static size_t bytes_of_lm(const Qwen3LM * m) {
@@ -213,6 +218,10 @@ static size_t bytes_of_vae(const VAEGGML * m) {
 }
 
 static size_t bytes_of_ss2(const SheetSage2 * m) {
+    return m && m->wctx.buffer ? ggml_backend_buffer_get_size(m->wctx.buffer) : 0;
+}
+
+static size_t bytes_of_atok(const AudioTokenizer * m) {
     return m && m->wctx.buffer ? ggml_backend_buffer_get_size(m->wctx.buffer) : 0;
 }
 
@@ -282,6 +291,24 @@ SheetSage2 * store_require_ss2(ModelStore * s, const ModelKey & k) {
     }
     install_entry(s, k, m, bytes_of_ss2(m), "SS2", del_ss2);
     fprintf(stderr, "[Store] Load SS2: %.0f ms\n", t.ms());
+    return m;
+}
+
+AudioTokenizer * store_require_atok(ModelStore * s, const ModelKey & k) {
+    if (auto * hit = cache_hit<AudioTokenizer>(s, k)) {
+        return hit;
+    }
+    if (s->policy == EVICT_STRICT) {
+        evict_conflicts(s, k);
+    }
+    Timer            t;
+    AudioTokenizer * m = new AudioTokenizer();
+    if (!atok_load(m, k.path.c_str())) {
+        delete m;
+        return nullptr;
+    }
+    install_entry(s, k, m, bytes_of_atok(m), "ATOK", del_atok);
+    fprintf(stderr, "[Store] Load ATOK: %.0f ms\n", t.ms());
     return m;
 }
 

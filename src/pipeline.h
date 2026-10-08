@@ -56,6 +56,7 @@ struct Yue2Pipeline {
     std::string               model_path;        // the backbone GGUF, both halves and the tokenizer
     std::string               vae_path;
     std::string               transcriber_path;  // the SheetSage2 GGUF, empty without one
+    std::string               tokenizer_path;    // the audio tokenizer GGUF, empty without one
     Yue2PipelineParams        params;
     std::vector<AdapterEntry> adapters;          // the adapter directory, scanned at configure
     DebugDumper               dumper;
@@ -209,6 +210,15 @@ static VAEGGML * require_vae(Yue2Pipeline * p) {
     return store_require_vae(p->store, k);
 }
 
+static AudioTokenizer * require_atok(Yue2Pipeline * p) {
+    ModelKey         k = { MODEL_ATOK, p->tokenizer_path, {} };
+    AudioTokenizer * m = store_require_atok(p->store, k);
+    if (m) {
+        m->use_flash_attn = m->use_flash_attn && !p->params.no_fa;
+    }
+    return m;
+}
+
 static SheetSage2 * require_ss2(Yue2Pipeline * p) {
     ModelKey     k = { MODEL_SS2, p->transcriber_path, {} };
     SheetSage2 * m = store_require_ss2(p->store, k);
@@ -234,6 +244,26 @@ static bool pipeline_transcribe(Yue2Pipeline * p,
     }
     ModelHandle hold(p->store, m);
     return ss2_transcribe(m, audio, n_samples, melody_only, abc, error, &p->dumper);
+}
+
+// A recording to its semantic codes, the stream a replay renders. The
+// tokenizer holds the GPU for the call and steps aside after it.
+static bool pipeline_tokenize(Yue2Pipeline *     p,
+                              const float *      audio,
+                              int                n_samples,
+                              std::vector<int> * codes,
+                              std::string *      error) {
+    AudioTokenizer * m = require_atok(p);
+    if (!m) {
+        *error = "audio tokenizer unavailable";
+        return false;
+    }
+    ModelHandle hold(p->store, m);
+    if (!atok_tokenize(m, audio, n_samples, codes, &p->dumper)) {
+        *error = "tokenization failed";
+        return false;
+    }
+    return true;
 }
 
 // The cache of one generate: the stages grow it to the sets they need, a

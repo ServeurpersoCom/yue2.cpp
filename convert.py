@@ -23,6 +23,11 @@
 #                                    BART decoder as shipped, with the config
 #                                    json and the symbolic token tables; it
 #                                    loads on the GGUF of its base model)
+#   yue2-mothersuperior-realaudio-tokenizer-v4/ -> yue2-mothersuperior-realaudio-tokenizer-v4-F32.gguf
+#                                   (the audio to semantic codes head over MERT
+#                                    layer 20, tokenizer_head_joint_v9 as shipped,
+#                                    with a config json naming its base model;
+#                                    it loads on the GGUF of its base model)
 
 import os
 import sys
@@ -41,6 +46,25 @@ COMPONENTS = {
     "vae":         "YuE2-Vae",
     "mert":        "MERT-v2-FullSong",
     "transcriber": "SheetSage2",
+    "tokenizer":   "yue2-mothersuperior-realaudio-tokenizer-v4",
+}
+
+# The audio tokenizer of Mothersuperior: the head the v9 audio domain round
+# trained against MERT-v2-FullSong layer 20, and the recipe its scripts run
+TOKENIZER_HEAD = "tokenizer_head_joint_v9.safetensors"
+TOKENIZER_CONFIG = {
+    "base_model_name_or_path": "m-a-p/MERT-v2-FullSong",
+    "mert_layer": 20,
+    "chunk_seconds": 30,
+    "frame_rate": 25,
+    "window": 512,
+    "hidden_size": 512,
+    "num_hidden_layers": 8,
+    "num_attention_heads": 8,
+    "intermediate_size": 2048,
+    "layer_norm_eps": 1e-5,
+    "instance_norm_eps": 1e-5,
+    "vocab_size": 32768,
 }
 
 def log(tag, msg):
@@ -320,6 +344,32 @@ def convert_transcriber():
     w.close()
     log("transcriber", "wrote %s (%.1f MB)" % (out_path, os.path.getsize(out_path) / 1e6))
 
+def convert_tokenizer():
+    """yue2-mothersuperior-realaudio-tokenizer-v4/ -> yue2-mothersuperior-realaudio-tokenizer-v4-F32.gguf"""
+    head = os.path.join(CHECKPOINT_DIR, COMPONENTS["tokenizer"], TOKENIZER_HEAD)
+    out_path = os.path.join(OUTPUT_DIR, "yue2-mothersuperior-realaudio-tokenizer-v4-F32.gguf")
+
+    w = gguf.GGUFWriter(out_path, arch="yue2-tokenizer")
+    w.add_name("YuE2 audio tokenizer, the v9 head of Mothersuperior, on MERT-v2-FullSong")
+    w.add_string("yue2-tokenizer.config_json", json.dumps(TOKENIZER_CONFIG, separators=(",", ":")))
+    F32 = gguf.GGMLQuantizationType.F32
+    meta, data_start = read_sf_header(head)
+    with open(head, "rb") as f:
+        for name in sorted(meta):
+            t = meta[name]
+            if t["dtype"] != "F32":
+                raise SystemExit("unexpected dtype %s for %s" % (t["dtype"], name))
+            f.seek(data_start + t["data_offsets"][0])
+            raw = f.read(t["data_offsets"][1] - t["data_offsets"][0])
+            w.add_tensor(name, np.frombuffer(raw, dtype=np.float32).reshape(t["shape"]), raw_dtype=F32)
+    log("tokenizer", "%d tensors" % len(meta))
+
+    w.write_header_to_file()
+    w.write_kv_data_to_file()
+    w.write_tensors_to_file()
+    w.close()
+    log("tokenizer", "wrote %s (%.1f MB)" % (out_path, os.path.getsize(out_path) / 1e6))
+
 def convert(component):
     if component == "backbone":
         convert_backbone()
@@ -332,6 +382,9 @@ def convert(component):
         return
     if component == "transcriber":
         convert_transcriber()
+        return
+    if component == "tokenizer":
+        convert_tokenizer()
 
 def main():
     if not os.path.isdir(CHECKPOINT_DIR):
@@ -340,7 +393,7 @@ def main():
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    native = {"backbone": "BF16", "vae": "F32", "mert": "F32", "transcriber": "F32"}
+    native = {"backbone": "BF16", "vae": "F32", "mert": "F32", "transcriber": "F32", "tokenizer": "F32"}
     converted = 0
     for comp in COMPONENTS:
         output_path = os.path.join(OUTPUT_DIR, "%s-%s.gguf" % (COMPONENTS[comp], native[comp]))

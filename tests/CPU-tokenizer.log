@@ -1,0 +1,17 @@
+[GGUF] ../models/yue2-mothersuperior-realaudio-tokenizer-v4-F32.gguf: 103 tensors, data at offset 6944
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 97249 MiB):
+  Device 0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, compute capability 12.0, VMM: yes, VRAM: 97249 MiB
+load_backend: loaded CUDA backend from /mnt/workspace/git/yue2.cpp/build/libggml-cuda.so
+load_backend: loaded Vulkan backend from /mnt/workspace/git/yue2.cpp/build/libggml-vulkan.so
+load_backend: loaded CPU backend from /mnt/workspace/git/yue2.cpp/build/libggml-cpu-zen4.so
+[Load] Tokenizer backend: CPU (CPU threads: 16)
+[GGUF] ../models/MERT-v2-FullSong-F32.gguf: 876 tensors, data at offset 63200
+[WeightCtx] Loaded 872 tensors, 2412.0 MB into backend
+[MERT] Loaded: 24 conformer layers, 0 LoRA tensors merged
+[WeightCtx] Loaded 103 tensors, 163.3 MB into backend
+[Tokenizer] Loaded: MERT layer 20, 8 head layers, window 512, vocab 32768
+[Debug] tokenizer-mert: [1750, 1024] first4: -1.320016 -0.881059 0.092333 -0.203180
+[Debug] tokenizer-codes: [1750, 1] first4: 12046.000000 2569.000000 2569.000000 3544.000000
+[Tokenizer] 1750 codes, 70.0 s of audio, 2974 ms
+[Parity] tokenizer-features: rel rms 2.051e-04 max abs 1.012e-02 OK
+[Parity] tokenizer-codes: 1750 frames, 0.9994 agree OK

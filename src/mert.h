@@ -9,6 +9,7 @@
 // subsampled frames and the state after every layer are there to read.
 
 #include "adapter.h"
+#include "audio-resample.h"
 #include "gguf-weights.h"
 #include "weight-ctx.h"
 #include "yyjson.h"
@@ -253,6 +254,28 @@ static void mert_free(Mert * m) {
     wctx_free(&m->wctx);
 }
 
+// Decoded planar stereo to the 24 kHz mono waveform MERT reads: the
+// channels averaged, the rate converted
+static bool mert_mono_24k(float * planar, int T, int sr, std::vector<float> * out) {
+    std::vector<float> mono((size_t) T);
+    for (int i = 0; i < T; i++) {
+        mono[(size_t) i] = 0.5f * (planar[i] + planar[T + i]);
+    }
+    free(planar);
+    if (sr == MERT_SAMPLE_RATE) {
+        *out = mono;
+        return true;
+    }
+    int     n_out     = 0;
+    float * resampled = audio_resample(mono.data(), T, sr, MERT_SAMPLE_RATE, 1, &n_out);
+    if (!resampled) {
+        return false;
+    }
+    out->assign(resampled, resampled + n_out);
+    free(resampled);
+    return true;
+}
+
 // Mel frontend on the host, the torchaudio pipeline of the checkpoint:
 // centered reflect padded STFT, power spectrum, mel filterbank, dB, the last
 // frame dropped, per bin normalization. Output [T, n_mels] time major.
@@ -404,10 +427,11 @@ static struct ggml_tensor * mert_build_resample(struct ggml_context * ctx,
     struct ggml_tensor * h     = mert_layer_norm(ctx, x, b->rs_ln_w, b->rs_ln_b, eps);
     int64_t              C_in  = h->ne[0];
     int64_t              C_out = b->rs_w->ne[2];
-    h                          = ggml_reshape_2d(ctx, h, 2 * C_in, h->ne[1] / 2);
+    int64_t              T_out = h->ne[1] / 2;  // an odd last frame has no pair and is dropped
+    h                      = ggml_reshape_2d(ctx, ggml_view_2d(ctx, h, C_in, 2 * T_out, h->nb[1], 0), 2 * C_in, T_out);
     // Kernel [2, C_in, C_out] reordered as [C_in, 2, C_out] so the pair index is outer
-    struct ggml_tensor * w     = ggml_cont(ctx, ggml_permute(ctx, b->rs_w, 1, 0, 2, 3));
-    w                          = ggml_reshape_2d(ctx, w, 2 * C_in, C_out);
+    struct ggml_tensor * w = ggml_cont(ctx, ggml_permute(ctx, b->rs_w, 1, 0, 2, 3));
+    w                      = ggml_reshape_2d(ctx, w, 2 * C_in, C_out);
     return mert_linear(ctx, w, b->rs_b, h);
 }
 

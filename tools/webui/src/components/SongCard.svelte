@@ -9,10 +9,18 @@
 		Heart,
 		Type,
 		TriangleAlert,
-		Music
+		Music,
+		AudioWaveform
 	} from '@lucide/svelte';
 	import { app, setRequest, toast } from '../lib/state.svelte.js';
-	import { transcribeSubmit, pollJob, jobResultTranscribe } from '../lib/api.js';
+	import {
+		transcribeSubmit,
+		tokenizeSubmit,
+		pollJob,
+		jobResultTranscribe,
+		jobResultTokenize
+	} from '../lib/api.js';
+	import { COT_OFF } from '../lib/config.js';
 	import { deleteSong, putSong } from '../lib/db.js';
 	import type { Song } from '../lib/types.js';
 	import Waveform from './Waveform.svelte';
@@ -127,6 +135,22 @@
 		}
 	}
 
+	// tokenize audio: send the recording to /tokenize and put the semantic
+	// codes it heard in the form, with no score, so Generate renders the song
+	// again through the NAR half. The style and the lyrics stay yours.
+	async function tokenize() {
+		try {
+			const jobId = await tokenizeSubmit(song.audio);
+			await pollJob(jobId);
+			const result = await jobResultTokenize(jobId);
+			app.request.semantic_tokens = result.codes ?? '';
+			app.request.cot = COT_OFF;
+			toast('Tokenized: ' + song.name, 4000, true);
+		} catch (e) {
+			toast('Tokenization failed: ' + (e instanceof Error ? e.message : String(e)));
+		}
+	}
+
 	// Single action menu: one entry per user intent.
 	// Destructive entries open a confirm dialog.
 	const actionItems: MenuItem[] = $derived([
@@ -135,6 +159,7 @@
 		{ icon: Download, label: 'Download audio', onSelect: downloadAudio },
 		{ icon: Music, label: 'Transcribe score', onSelect: () => transcribe(false) },
 		{ icon: Music, label: 'Transcribe melody', onSelect: () => transcribe(true) },
+		{ icon: AudioWaveform, label: 'Tokenize audio', onSelect: tokenize },
 		{ icon: Trash2, label: 'Delete this track', onSelect: () => (confirmDeleteOpen = true) },
 		{
 			icon: TriangleAlert,

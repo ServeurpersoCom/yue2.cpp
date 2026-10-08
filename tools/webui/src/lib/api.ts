@@ -40,6 +40,20 @@ export async function jobResultTranscribe(id: string): Promise<{ abc: string }> 
 	return res.json();
 }
 
+// POST /tokenize (multipart): submit a recording, returns job ID.
+export function tokenizeSubmit(audio: Blob): Promise<string> {
+	const form = new FormData();
+	form.append('audio', audio, 'input.audio');
+	return submitJob('tokenize', { method: 'POST', body: form });
+}
+
+// GET /job?id=X&result=1: fetch a tokenize result, the semantic codes it heard.
+export async function jobResultTokenize(id: string): Promise<{ codes: string }> {
+	const res = await fetch(`job?id=${encodeURIComponent(id)}&result=1`);
+	if (!res.ok) throw new Error(`${res.status} Result not ready`);
+	return res.json();
+}
+
 // GET /job?id=X: poll job status
 export async function jobStatus(id: string): Promise<string> {
 	const res = await fetch(`job?id=${encodeURIComponent(id)}`, {

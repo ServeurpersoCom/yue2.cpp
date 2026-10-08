@@ -12,7 +12,6 @@
 // reference does, the global response norm of the frontend spans the whole
 // window and would move with the padding otherwise.
 
-#include "audio-resample.h"
 #include "backend.h"
 #include "debug.h"
 #include "gguf-weights.h"
@@ -1177,26 +1176,4 @@ static bool ss2_transcribe(SheetSage2 *        m,
     fprintf(stderr, "[SheetSage] Transcribed: %.1f s of audio, %zu events, %.1f s%s\n", duration, stitched.size(),
             total.ms() / 1000.0, ok ? "" : ", no score");
     return ok;
-}
-
-// Decoded planar stereo to the 24 kHz mono waveform the model reads: the
-// channels averaged, the rate converted
-static bool ss2_mono_24k(float * planar, int T, int sr, std::vector<float> * out) {
-    std::vector<float> mono((size_t) T);
-    for (int i = 0; i < T; i++) {
-        mono[(size_t) i] = 0.5f * (planar[i] + planar[T + i]);
-    }
-    free(planar);
-    if (sr == MERT_SAMPLE_RATE) {
-        *out = mono;
-        return true;
-    }
-    int     n_out     = 0;
-    float * resampled = audio_resample(mono.data(), T, sr, MERT_SAMPLE_RATE, 1, &n_out);
-    if (!resampled) {
-        return false;
-    }
-    out->assign(resampled, resampled + n_out);
-    free(resampled);
-    return true;
 }

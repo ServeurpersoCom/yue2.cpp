@@ -14,6 +14,7 @@ yue-server.exe ^
     --model models\YuE2-3B-Q8_0.gguf ^
     --vae models\YuE2-Vae-F32.gguf ^
     --transcriber models\SheetSage2-Q8_0.gguf ^
+    --tokenizer models\yue2-mothersuperior-realaudio-tokenizer-v4-Q8_0.gguf ^
     --adapters adapters
 
 pause
