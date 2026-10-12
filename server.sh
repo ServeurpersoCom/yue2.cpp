@@ -2,9 +2,7 @@
 
 set -eu
 
-# Multi-GPU: set GGML_BACKEND to pick a device (CUDA0, CUDA1, Vulkan0...)
-#export GGML_BACKEND=CUDA0
-#export GGML_BACKEND=Vulkan0
+# Multi-GPU: add --device <name> below (CUDA0, CUDA1, Vulkan0, CPU)
 
 # Q8_0 is near lossless. The quant is a straight swap: quantize.sh also
 # builds Q6_K and Q5_K_M, and the native BF16 stays available.

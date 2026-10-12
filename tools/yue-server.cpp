@@ -10,6 +10,7 @@
 // live in src/.
 
 #include "audio-io.h"
+#include "backend.h"
 #include "httplib.h"
 #include "index.html.gz.hpp"
 #include "pipeline.h"
@@ -705,6 +706,8 @@ static void print_usage(const char * prog) {
             "  --vae <gguf>           VAE GGUF\n"
             "\n"
             "Optional:\n"
+            "  --device <name>        Compute device: CUDA0, Vulkan0, MTL0, CPU...\n"
+            "                         (default: best available)\n"
             "  --transcriber <gguf>   SheetSage2 GGUF, MERT beside it, enables /transcribe\n"
             "  --tokenizer <gguf>     Audio tokenizer GGUF, MERT beside it, enables /tokenize\n"
             "  --adapters <dir>       Directory of LoRA adapters a request can stack\n"
@@ -728,8 +731,9 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    const char *       host = "0.0.0.0";
-    int                port = 8087;
+    const char *       host   = "0.0.0.0";
+    const char *       device = nullptr;
+    int                port   = 8087;
     Yue2PipelineParams params;
 
     for (int i = 1; i < argc; i++) {
@@ -738,6 +742,8 @@ int main(int argc, char ** argv) {
             g_model_path = argv[++i];
         } else if (!strcmp(argv[i], "--vae") && !last) {
             g_vae_path = argv[++i];
+        } else if (!strcmp(argv[i], "--device") && !last) {
+            device = argv[++i];
         } else if (!strcmp(argv[i], "--transcriber") && !last) {
             g_transcriber_path = argv[++i];
         } else if (!strcmp(argv[i], "--tokenizer") && !last) {
@@ -772,6 +778,10 @@ int main(int argc, char ** argv) {
     }
 
     if (g_model_path.empty() || g_vae_path.empty()) {
+        print_usage(argv[0]);
+        return 1;
+    }
+    if (device && !backend_set_device(device)) {
         print_usage(argv[0]);
         return 1;
     }

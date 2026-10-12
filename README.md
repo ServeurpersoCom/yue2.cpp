@@ -168,6 +168,8 @@ Required:
   --vae <gguf>           VAE GGUF
 
 Optional:
+  --device <name>        Compute device: CUDA0, Vulkan0, MTL0, CPU...
+                         (default: best available)
   --transcriber <gguf>   SheetSage2 GGUF, MERT beside it, enables /transcribe
   --tokenizer <gguf>     Audio tokenizer GGUF, MERT beside it, enables /tokenize
   --adapters <dir>       Directory of LoRA adapters a request can stack

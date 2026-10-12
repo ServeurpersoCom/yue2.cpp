@@ -13,7 +13,7 @@ Run from the tests/ directory.
 
 Usage:
     ./test-tokenizer.py
-    GGML_BACKEND=CPU ./test-tokenizer.py
+    ./test-tokenizer.py --device CPU
 """
 import importlib
 import os
@@ -25,6 +25,8 @@ import torch
 import torch.nn as nn
 
 BIN = "../build/test-tokenizer"
+# A leading "--device <name>" is forwarded to the harness
+DEVICE = ["--device", sys.argv[2]] if sys.argv[1:2] == ["--device"] else []
 MERT = "../checkpoints/MERT-v2-FullSong"
 HEAD = "../checkpoints/yue2-mothersuperior-realaudio-tokenizer-v4/tokenizer_head_joint_v9.safetensors"
 GGUF = "../models/yue2-mothersuperior-realaudio-tokenizer-v4-F32.gguf"
@@ -97,7 +99,7 @@ def main():
     audio.tofile(TMP + "/tokenizer_audio.bin")
 
     features, codes = reference(audio)
-    subprocess.run([BIN, GGUF, TMP + "/tokenizer_audio.bin", TMP + "/tokenizer"], check=True)
+    subprocess.run([BIN] + DEVICE + [GGUF, TMP + "/tokenizer_audio.bin", TMP + "/tokenizer"], check=True)
 
     got = sheetsage.load_dump(TMP + "/tokenizer/tokenizer-mert.bin")
     mean = got.mean(0)

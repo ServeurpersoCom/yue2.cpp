@@ -6,6 +6,7 @@
 // VAE, or seeds a new performance.
 #include "audio-io.h"
 #include "audio-tokenizer.h"
+#include "backend.h"
 #include "version.h"
 
 #include <cstdio>
@@ -24,6 +25,8 @@ static void print_usage(const char * prog) {
             "  --audio <file>         Recording to tokenize (WAV or MP3)\n"
             "\n"
             "Optional:\n"
+            "  --device <name>        Compute device: CUDA0, Vulkan0, MTL0, CPU...\n"
+            "                         (default: best available)\n"
             "  --out <path>           Output codes (default: codes.csv)\n"
             "\n"
             "Debug:\n"
@@ -38,6 +41,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
     const char * model_path = nullptr;
+    const char * device     = nullptr;
     const char * audio_path = nullptr;
     const char * out_path   = "codes.csv";
     const char * dump_dir   = nullptr;
@@ -48,6 +52,8 @@ int main(int argc, char ** argv) {
             model_path = argv[++i];
         } else if (!strcmp(argv[i], "--audio") && !last) {
             audio_path = argv[++i];
+        } else if (!strcmp(argv[i], "--device") && !last) {
+            device = argv[++i];
         } else if (!strcmp(argv[i], "--out") && !last) {
             out_path = argv[++i];
         } else if (!strcmp(argv[i], "--no-fa")) {
@@ -60,6 +66,10 @@ int main(int argc, char ** argv) {
         }
     }
     if (!model_path || !audio_path) {
+        print_usage(argv[0]);
+        return 1;
+    }
+    if (device && !backend_set_device(device)) {
         print_usage(argv[0]);
         return 1;
     }

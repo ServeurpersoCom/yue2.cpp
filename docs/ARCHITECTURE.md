@@ -67,9 +67,8 @@ codes), `neural-codec` (Oobleck VAE codec), `mp3-codec` (MP3
 encoder/decoder) and `quantize` (GGUF requantizer).
 
 A single `build/` directory serves every backend combination. With
-`buildall`, the backend is picked at runtime: the `GGML_BACKEND`
-environment variable forces a specific device (`CUDA0`, `Vulkan0`, `CPU`),
-unset picks the best available one.
+`buildall`, the backend is picked at runtime: `--device` forces a specific
+device (`CUDA0`, `Vulkan0`, `CPU`), omitted picks the best available one.
 
 ## Models
 
@@ -706,6 +705,8 @@ Required:
   --request <json>       Input request JSON
 
 Optional:
+  --device <name>        Compute device: CUDA0, Vulkan0, MTL0, CPU...
+                         (default: best available)
   --out <path>           Output score (default: score.abc)
   --lm-seed <N>          Token sampling seed (default: random)
 
@@ -731,6 +732,8 @@ Required:
   --request <json>       Input request JSON
 
 Optional:
+  --device <name>        Compute device: CUDA0, Vulkan0, MTL0, CPU...
+                         (default: best available)
   --out <path>           Output audio (default: song.mp3), a batch numbers it
   --duration <s>         Target length in seconds
   --lm-seed <N>          Token sampling seed
@@ -772,6 +775,8 @@ Required:
   --vae <gguf>           VAE GGUF
 
 Optional:
+  --device <name>        Compute device: CUDA0, Vulkan0, MTL0, CPU...
+                         (default: best available)
   --transcriber <gguf>   SheetSage2 GGUF, MERT beside it, enables /transcribe
   --tokenizer <gguf>     Audio tokenizer GGUF, MERT beside it, enables /tokenize
   --adapters <dir>       Directory of LoRA adapters a request can stack
@@ -906,6 +911,8 @@ Required:
   --audio <file>         Recording to transcribe (WAV or MP3)
 
 Optional:
+  --device <name>        Compute device: CUDA0, Vulkan0, MTL0, CPU...
+                         (default: best available)
   --out <path>           Output score (default: score.abc)
   --melody-only          Omit the chord symbols from the score
 
@@ -931,6 +938,8 @@ Required:
   --audio <file>         Recording to tokenize (WAV or MP3)
 
 Optional:
+  --device <name>        Compute device: CUDA0, Vulkan0, MTL0, CPU...
+                         (default: best available)
   --out <path>           Output codes (default: codes.csv)
 
 Debug:
@@ -959,6 +968,8 @@ Required:
   -i <path>               Input file
 
 Optional:
+  --device <name>         Compute device: CUDA0, Vulkan0, MTL0, CPU...
+                          (default: best available)
   -o <path>               Output file (default: input with swapped extension)
   --q8                    Quantize the latent to int8 (encode only)
   --q4                    Quantize the latent to 4 bits (encode only)
@@ -1014,9 +1025,10 @@ One test per subject under `tests/`, run from `tests/` with the ready build
 in `../build`. Each `test-*.py` owns both sides of its comparison: it builds
 the torch reference, runs its `test-*` binary on the same inputs, checks
 relative RMS and max absolute error against its own threshold, prints one
-line per case and exits non zero on failure. `GGML_BACKEND` selects the
-device, and the `test-*.sh` next to each test runs it on every backend that
-matters for it and archives the output as `{backend}-{subject}.log`.
+line per case and exits non zero on failure. A leading `--device <name>`
+selects the device, and the `test-*.sh` next to each test runs it on every
+backend that matters for it and archives the output as
+`{backend}-{subject}.log`.
 
 Twenty four cases, all green on CUDA0 and CPU:
 

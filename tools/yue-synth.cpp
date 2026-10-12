@@ -4,6 +4,7 @@
 // matching from the AR prefix cache, and decodes the latents to 48 kHz stereo.
 
 #include "audio-io.h"
+#include "backend.h"
 #include "pipeline.h"
 #include "version.h"
 
@@ -41,6 +42,8 @@ static void print_usage(const char * prog) {
             "  --request <json>       Input request JSON\n"
             "\n"
             "Optional:\n"
+            "  --device <name>        Compute device: CUDA0, Vulkan0, MTL0, CPU...\n"
+            "                         (default: best available)\n"
             "  --out <path>           Output audio (default: song.mp3), a batch numbers it\n"
             "  --duration <s>         Target length in seconds\n"
             "  --lm-seed <N>          Token sampling seed\n"
@@ -68,6 +71,7 @@ int main(int argc, char ** argv) {
     }
 
     const char *       model_path  = nullptr;
+    const char *       device      = nullptr;
     const char *       vae_path    = nullptr;
     const char *       score_path  = nullptr;
     const char *       tokens_path = nullptr;
@@ -89,6 +93,8 @@ int main(int argc, char ** argv) {
             model_path = argv[++i];
         } else if (!strcmp(argv[i], "--vae") && !last) {
             vae_path = argv[++i];
+        } else if (!strcmp(argv[i], "--device") && !last) {
+            device = argv[++i];
         } else if (!strcmp(argv[i], "--request") && !last) {
             i++;  // parsed before the flag pass so the flags override it
         } else if (!strcmp(argv[i], "--out") && !last) {
@@ -128,6 +134,10 @@ int main(int argc, char ** argv) {
     }
 
     if (!model_path || !vae_path) {
+        print_usage(argv[0]);
+        return 1;
+    }
+    if (device && !backend_set_device(device)) {
         print_usage(argv[0]);
         return 1;
     }

@@ -7,6 +7,7 @@
 // for comparison against the torch reference. The FP16 clamp flag runs both
 // halves clamped.
 
+#include "backend.h"
 #include "nar.h"
 
 #include <cstdio>
@@ -25,9 +26,20 @@ static bool read_all(const char * path, void * dst, size_t bytes) {
 }
 
 int main(int argc, char ** argv) {
+    // A leading --device <name> picks the device, the positional arguments follow
+    if (argc > 2 && !strcmp(argv[1], "--device")) {
+        if (!backend_set_device(argv[2])) {
+            return 1;
+        }
+        for (int i = 3; i <= argc; i++) {
+            argv[i - 2] = argv[i];
+        }
+        argc -= 2;
+    }
     if (argc != 9 && !(argc == 10 && strcmp(argv[9], "--clamp-fp16") == 0)) {
         fprintf(stderr,
-                "usage: %s backbone.gguf ar_ids.bin x_t.bin T_lat M velocity raw_t out.bin [--clamp-fp16]\n"
+                "usage: %s [--device <name>] backbone.gguf ar_ids.bin x_t.bin T_lat M velocity raw_t out.bin "
+                "[--clamp-fp16]\n"
                 "       %s backbone.gguf ar_ids.bin x_t.bin T_lat M solve steps out.bin [--clamp-fp16]\n",
                 argv[0], argv[0]);
         return 1;
