@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AudioWaveform, Wifi, WifiOff, House, Music2, Library, SlidersHorizontal, Settings, Mic2, Sparkles, Disc3 } from '@lucide/svelte';
+	import { AudioWaveform, Palette, House, Music2, Library, SlidersHorizontal, Settings, Mic2, Sparkles, Disc3 } from '@lucide/svelte';
 	import './studio.css';
 	import './reference-studio.css';
 	import './glass-studio.css';
@@ -8,6 +8,7 @@
 	import './theme-identities.css';
 	import './color-system.css';
 	import './ui-upgrade.css';
+	import './topbar.css';
 	import { app, retrySettingsStorage, toast } from './lib/state.svelte.js';
 	import { props } from './lib/api.js';
 	import { getAllSongs } from './lib/db.js';
@@ -96,22 +97,27 @@
 
 	let statusText = $derived(
 		app.props
-			? `${modelShort(app.props.model)} · ${Math.round(app.props.context / 1024)}k ctx · ${Math.round(app.props.sample_rate / 1000)} kHz`
-			: 'server offline'
+			? `${modelShort(app.props.model)}, ${Math.round(app.props.context / 1024)}k context, ${Math.round(app.props.sample_rate / 1000)} kHz`
+			: 'Engine offline: start the YuE2 server, then this reconnects on its own'
 	);
+	let engineLabel = $derived(app.props ? modelShort(app.props.model) || 'Engine ready' : 'Engine offline');
 </script>
 
 <div class="yue2-app">
 	{#if app.storageWarning}<div class="storage-warning" role="status">{app.storageWarning} <button type="button" onclick={retrySettingsStorage}>Save settings again</button></div>{/if}
 	<header class="topbar">
-		<div class="brand"><span class="brand-mark"><AudioWaveform size={19} /></span><span class="brand-name">YuE2 Studio</span><span class="brand-version">LOCAL STUDIO</span></div>
-		<div class="status-pill" class:online={app.props} class:offline={!app.props} title={statusText}>
-			{#if app.props}<Wifi size={13} />{:else}<WifiOff size={13} />{/if}<span>{statusText}</span><span class="status-chevron">⌄</span>
+		<div class="brand">
+			<span class="brand-mark" aria-hidden="true"><AudioWaveform size={19} /></span>
+			<span class="brand-text">
+				<span class="brand-name">YuE2 Studio</span>
+				<span class="engine-status" class:online={app.props} class:offline={!app.props} title={statusText}><span class="engine-dot" aria-hidden="true"></span><span class="engine-label"><span class="sr-only">Engine: </span>{engineLabel}{#if app.props}<span class="engine-detail">, {Math.round(app.props.context / 1024)}k context, {Math.round(app.props.sample_rate / 1000)} kHz</span>{/if}</span></span>
+			</span>
 		</div>
-		<div class="topbar-spacer"></div>
 		<GlobalPlayer />
-		<label class="topbar-theme"><span class="sr-only">Color theme</span><select aria-label="Color theme" value={theme} onchange={e => setTheme(e.currentTarget.value as Theme)}><option value="studio">Studio Glass</option><option value="mint">Mint</option><option value="dark">Dark</option><option value="cyberpunk">Cyberpunk</option><option value="colorful">Colorful</option><option value="orange">Orange Voltage</option><option value="burnt-orange">Classic</option></select></label>
-  <a class="settings-shortcut" href="#settings" onclick={() => focusSection('settings')} aria-label="Studio settings"><Settings size={17} /></a>
+		<div class="topbar-tools">
+			<label class="topbar-theme"><span class="sr-only">Color theme</span><Palette size={16} aria-hidden="true" /><select aria-label="Color theme" value={theme} onchange={e => setTheme(e.currentTarget.value as Theme)}><option value="studio">Studio Glass</option><option value="mint">Mint</option><option value="dark">Dark</option><option value="cyberpunk">Cyberpunk</option><option value="colorful">Colorful</option><option value="orange">Orange Voltage</option><option value="burnt-orange">Classic</option></select></label>
+			<a class="settings-shortcut" href="#settings" onclick={() => focusSection('settings')} aria-label="Studio settings" title="Studio settings"><Settings size={20} /></a>
+		</div>
 	</header>
 
 	<div class="studio-frame">
@@ -267,41 +273,6 @@
 		font-weight: 700;
 		letter-spacing: 0.01em;
 	}
-	.brand-version {
-		font-size: .75rem;
-		font-family: ui-monospace, monospace;
-		color: var(--fg-faint);
-		border: 1px solid var(--border);
-		border-radius: 999px;
-		padding: 0.1rem 0.5rem;
-	}
-	.status-pill {
-		display: flex;
-		align-items: center;
-		gap: 0.45rem;
-		font-size: .75rem;
-		font-family: ui-monospace, monospace;
-		color: var(--fg-dim);
-		background: var(--bg-card);
-		border: 1px solid var(--border);
-		border-radius: 999px;
-		padding: 0.32rem 0.75rem;
-		max-width: 42vw;
-		overflow: hidden;
-		white-space: nowrap;
-	}
-	.status-pill span {
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.status-pill.online {
-		color: var(--ok);
-		border-color: rgba(52, 211, 153, 0.35);
-	}
-	.status-pill.offline {
-		color: var(--error);
-		border-color: rgba(248, 113, 113, 0.35);
-	}
 	main {
 		flex: 1;
 		width: 100%;
@@ -326,5 +297,5 @@
 	.yue2-app .library-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(280px,350px); min-width:0; min-height:0; overflow:hidden; }
 	@media(max-width:1000px) { .yue2-app main.workspace-main { display:flex; flex-direction:column; padding:8px; } }
 	@media(max-width:900px) { .yue2-app .library-workspace { grid-template-columns:minmax(0,1fr) 280px; overflow:auto; } }
-	@media(max-width:680px) { .yue2-app { height:auto; min-height:100dvh; overflow:visible; }.yue2-app > header.topbar { position:sticky; top:0; flex-basis:58px; }.yue2-app .status-pill { display:flex; }.yue2-app main.workspace-main { display:flex; padding:7px; }.yue2-app main.library-main { padding:12px; }.yue2-app .library-workspace { display:flex; flex-direction:column; overflow:visible; }.yue2-app .library-rail { display:none; } }
+	@media(max-width:680px) { .yue2-app { height:auto; min-height:100dvh; overflow:visible; }.yue2-app > header.topbar { position:sticky; top:0; flex-basis:58px; }.yue2-app main.workspace-main { display:flex; padding:7px; }.yue2-app main.library-main { padding:12px; }.yue2-app .library-workspace { display:flex; flex-direction:column; overflow:visible; }.yue2-app .library-rail { display:none; } }
 </style>

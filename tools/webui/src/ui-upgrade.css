@@ -65,17 +65,8 @@ html[data-theme='studio'] .yue2-app .request-form .action-bar .preflight .hue-ch
 	.yue2-app input[type='range'] { min-height: 32px; }
 }
 
-/* ---- compact mobile header: brand, theme and a one-line player ---- */
+/* ---- phones: full-width song-length controls (header layout lives in topbar.css) ---- */
 @media (max-width: 680px) {
-	.yue2-app > header.topbar { height: 112px; min-height: 112px; flex-basis: 112px; padding: 6px 10px; gap: 4px 8px; align-content: flex-start; }
-	.yue2-app header.topbar .global-player { order: 10; flex-basis: 100%; min-height: 0; }
-	.yue2-app header.topbar .global-player .speaker-side,
-	.yue2-app header.topbar .global-player .cassette-carousel,
-	.yue2-app header.topbar .global-player .now-playing { display: none !important; }
-	.yue2-app header.topbar .global-player .transport { display: flex; flex-direction: row; align-items: center; gap: 8px; width: 100%; }
-	.yue2-app header.topbar .global-player .seek-row { flex: 1; }
-	.yue2-app .left-sidebar { top: 112px; }
-	.yue2-app .request-form .desk-nav { top: 155px; }
 	.yue2-app .request-form .length-mode { width: 100%; }
 	.yue2-app .request-form .length-mode button { flex: 1; min-height: 44px; }
 	.yue2-app .request-form .length-input { width: 100%; }

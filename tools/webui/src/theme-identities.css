@@ -46,7 +46,6 @@ html:root[data-theme][data-theme] .yue2-app .request-form .action-bar {border-ra
 html:root[data-theme][data-theme] .yue2-app .request-form :is(.action-bar .generate-btn,.generate-lyrics) {background:var(--accent-grad);color:var(--bg);border-radius:var(--theme-control-radius);border:1px solid var(--accent);font-weight:750}
 html:root[data-theme][data-theme] .yue2-app .sampling-control input[type=range]::-webkit-slider-thumb {background:var(--accent)}
 html:root[data-theme][data-theme] .yue2-app .sampling-control input[type=range]::-moz-range-thumb {background:var(--accent)}
-html:root[data-theme][data-theme] .yue2-app .status-pill.offline {color:var(--fg-dim)}
 
 /* CYBERPUNK: black technical panels, electric cyan, acid-yellow actions, magenta traces. */
 html:root[data-theme='cyberpunk'][data-theme] {

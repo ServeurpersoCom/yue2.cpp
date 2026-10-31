@@ -17,8 +17,6 @@ html:root[data-theme]:not([data-theme='studio']) .yue2-app .quick-style {backgro
 html:root[data-theme]:not([data-theme='studio']) .yue2-app .quick-style small,
 html:root[data-theme]:not([data-theme='studio']) .yue2-app .sidebar-label {color:var(--fg-dim);}
 html:root[data-theme]:not([data-theme='studio']) .yue2-app .add-style {background:var(--bg-card-2);border-color:var(--border-strong);color:var(--fg);}
-html:root[data-theme]:not([data-theme='studio']) .yue2-app .status-pill {background:var(--bg-card);border-color:var(--border);color:var(--accent);}
-html:root[data-theme] .yue2-app .brand-version {color:var(--accent);border-color:var(--border-strong);}
 html:root[data-theme] .yue2-app .volume,
 html:root[data-theme] .yue2-app .settings-shortcut {color:var(--fg-dim);}
 html:root[data-theme] .yue2-app .volume input[type='range'] {accent-color:var(--accent);}

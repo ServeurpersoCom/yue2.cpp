@@ -28,9 +28,10 @@ try {
   };r.onerror=()=>reject(r.error);
  }));
  await page.reload();await page.getByRole('button',{name:'Play preview',exact:true}).waitFor();
- assert.equal(await page.locator('.speaker-cabinet').count(),2);
+ // the header deck uses the cassette; the live speaker sits in the Output card
+ assert.equal(await page.locator('.speaker-cabinet').count(),1);
  const levels=()=>page.locator('.speaker-cabinet').evaluateAll(nodes=>nodes.map(n=>Number(n.style.getPropertyValue('--excursion'))));
- assert.deepEqual(await levels(),[0,0]);
+ assert.deepEqual(await levels(),[0]);
  await page.getByRole('button',{name:'Play preview',exact:true}).click();
  await page.waitForFunction(()=>[...document.querySelectorAll('.speaker-cabinet')].every(n=>Number(n.style.getPropertyValue('--excursion'))>.05));
  const active=await levels();
@@ -39,13 +40,13 @@ try {
  await page.getByLabel('Playback volume',{exact:true}).fill('0.7');await page.waitForTimeout(500);
  assert.ok((await levels()).every(v=>v>.05),'volume restore resumes motion');
  await page.getByRole('button',{name:'Pause preview',exact:true}).click();await page.waitForTimeout(1000);
- assert.deepEqual(await levels(),[0,0]);
- await page.emulateMedia({reducedMotion:'reduce'});await page.getByRole('button',{name:'Play preview',exact:true}).click();await page.waitForTimeout(300);assert.deepEqual(await levels(),[0,0]);
+ assert.deepEqual(await levels(),[0]);
+ await page.emulateMedia({reducedMotion:'reduce'});await page.getByRole('button',{name:'Play preview',exact:true}).click();await page.waitForTimeout(300);assert.deepEqual(await levels(),[0]);
  await page.emulateMedia({reducedMotion:'no-preference'});await page.waitForTimeout(300);
  await mkdir(new URL('../../../build/ui-review/',import.meta.url),{recursive:true});
  await page.screenshot({path:new URL('../../../build/ui-review/reactive-speakers.png',import.meta.url).pathname.replace(/^\/(\w:)/,'$1')});
  await page.setViewportSize({width:390,height:844});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile has no horizontal overflow');
  assert.deepEqual(errors,[]);
- console.log('PASS: two live speakers, bass response, mute/volume, pause, reduced motion, mobile layout, no runtime errors.',active);
+ console.log('PASS: live speaker, bass response, mute/volume, pause, reduced motion, mobile layout, no runtime errors.',active);
 } finally {await browser.close()}

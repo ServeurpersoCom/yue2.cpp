@@ -34,7 +34,6 @@ html[data-theme='studio'] .yue2-app header.topbar {
 }
 html[data-theme='studio'] .yue2-app .brand-name {color:#222b51;font-size:20px}
 html[data-theme='studio'] .yue2-app .brand-mark {background:linear-gradient(140deg,#4ce8d4,#9e8bf9);box-shadow:0 5px 20px #8f89e342}
-html[data-theme='studio'] .yue2-app .status-pill {background:#ffffff7a;color:var(--ok);border-color:#96c9c253}
 html[data-theme='studio'] .yue2-app .topbar-theme select {background:#f5f8ffad;color:var(--fg);border:1px solid var(--border);border-radius:24px;width:145px}
 html[data-theme='studio'] .studio-frame {grid-template-columns:210px minmax(0,1fr)}
 html[data-theme='studio'] .left-sidebar {
