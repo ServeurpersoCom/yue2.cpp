@@ -1,6 +1,7 @@
 <script lang="ts">
  import { Play, Pause, SkipBack, SkipForward, Volume2, Volume1, VolumeX, LoaderCircle } from '@lucide/svelte';
- import TapeDeck from './TapeDeck.svelte';
+ import CassetteCarousel from './CassetteCarousel.svelte';
+ import ReactiveSpeaker from './ReactiveSpeaker.svelte';
  import { app } from '../lib/state.svelte.js';
  import { player, resume, pause, seek, toggleTrack, selectTrack, setVolume } from '../lib/player.svelte.js';
  let lastVolume = .5;
@@ -26,47 +27,64 @@
  let buffered = $derived(player.duration ? Math.min(1, Math.max(player.buffered, player.time) / player.duration) : 0);
  let title = $derived(shown?.name || 'No track yet');
  let meta = $derived(player.error || (player.loading ? 'Loading…' : shown ? (shown.albumTitle ? `${shown.style || 'Custom sound'}, from ${shown.albumTitle}` : shown.style || 'Custom sound') : 'Generate a song to play it here'));
- let hue = $derived(shown?.id != null ? (shown.id * 47 + 200) % 360 : null);
 </script>
 
-<section class="global-player" class:playing={player.playing} class:empty={!shown} aria-label="Global music player">
- <TapeDeck {progress} playing={player.playing} {hue} />
- <div class="deck-transport">
-  <button class="deck-btn" type="button" onclick={() => skip(-1)} disabled={app.songs.length < 2} aria-label="Previous track"><SkipBack size={20} fill="currentColor" /></button>
-  <button class="deck-btn main-play" type="button" onclick={play} disabled={!player.song && !app.songs.length} aria-label={busy ? 'Pause playback' : 'Play playback'}>
-   {#if player.loading}<LoaderCircle size={24} class="deck-spin" />{:else if player.playing}<Pause size={24} fill="currentColor" />{:else}<Play size={24} fill="currentColor" class="deck-play-glyph" />{/if}
-  </button>
-  <button class="deck-btn" type="button" onclick={() => skip(1)} disabled={app.songs.length < 2} aria-label="Next track"><SkipForward size={20} fill="currentColor" /></button>
- </div>
- <div class="deck-track">
-  <p class="deck-title" title={title}>{title}</p>
-  <div class="deck-line"><p class="deck-meta" class:error={!!player.error} role="status" title={meta}>{meta}</p><span class="deck-clock">{format(player.time)} / {format(player.duration)}</span></div>
-  <div class="deck-seek">
-   <span class="deck-time" aria-hidden="true">{format(player.time)}</span>
-   <input class="deck-range deck-scrub" type="range" min="0" max={player.duration || 1} step="0.1" value={player.time}
-    style={`--fill:${(progress * 100).toFixed(2)}%;--buffer:${(buffered * 100).toFixed(2)}%`}
-    oninput={event => seek(Number(event.currentTarget.value))} onkeydown={seekKey} disabled={!player.duration}
-    aria-label="Playback position" aria-valuetext={`${format(player.time)} of ${format(player.duration)}`} />
-   <span class="deck-time" aria-hidden="true">{format(player.duration)}</span>
+<!-- One hi-fi deck: speaker | cassette + console | volume fader + speaker.
+     The speakers are the existing analyser-driven cabinets; the right one is the mute button. -->
+<section class="global-player" class:playing={player.playing} class:muted={!app.volume} class:empty={!shown} aria-label="Global music player">
+ <div class="hifi-speaker hifi-left" aria-hidden="true"><ReactiveSpeaker /></div>
+ <div class="deck-face">
+  <div class="deck-tapes"><CassetteCarousel /></div>
+  <div class="deck-console">
+   <div class="deck-head">
+    <div class="deck-transport">
+     <button class="deck-btn" type="button" onclick={() => skip(-1)} disabled={app.songs.length < 2} aria-label="Previous track"><SkipBack size={20} fill="currentColor" /></button>
+     <button class="deck-btn main-play" type="button" onclick={play} disabled={!player.song && !app.songs.length} aria-label={busy ? 'Pause playback' : 'Play playback'}>
+      {#if player.loading}<LoaderCircle size={24} class="deck-spin" />{:else if player.playing}<Pause size={24} fill="currentColor" />{:else}<Play size={24} fill="currentColor" class="deck-play-glyph" />{/if}
+     </button>
+     <button class="deck-btn" type="button" onclick={() => skip(1)} disabled={app.songs.length < 2} aria-label="Next track"><SkipForward size={20} fill="currentColor" /></button>
+    </div>
+    <div class="deck-track">
+     <p class="deck-title" title={title}>{title}</p>
+     <p class="deck-meta" class:error={!!player.error} role="status" title={meta}>{meta}</p>
+    </div>
+   </div>
+   <div class="deck-seek">
+    <span class="deck-time" aria-hidden="true">{format(player.time)}</span>
+    <input class="deck-range deck-scrub" type="range" min="0" max={player.duration || 1} step="0.1" value={player.time}
+     style={`--fill:${(progress * 100).toFixed(2)}%;--buffer:${(buffered * 100).toFixed(2)}%`}
+     oninput={event => seek(Number(event.currentTarget.value))} onkeydown={seekKey} disabled={!player.duration}
+     aria-label="Playback position" aria-valuetext={`${format(player.time)} of ${format(player.duration)}`} />
+    <span class="deck-time" aria-hidden="true">{format(player.duration)}</span>
+   </div>
   </div>
  </div>
  <div class="deck-volume">
-  <button class="deck-btn" type="button" onclick={mute} aria-label={app.volume ? 'Mute playback' : 'Unmute playback'} title={app.volume ? 'Mute' : 'Unmute'}>
-   {#if !app.volume}<VolumeX size={20} />{:else if app.volume < .5}<Volume1 size={20} />{:else}<Volume2 size={20} />{/if}
+  <input class="deck-level" type="range" min="0" max="1" step="0.01" bind:value={app.volume}
+   style={`--fill:${(app.volume * 100).toFixed(0)}%`} aria-label="Playback volume" aria-valuetext={`${Math.round(app.volume * 100)}%`} title={`Volume ${Math.round(app.volume * 100)}%`} />
+  <button class="deck-mute" type="button" onclick={mute} aria-label={app.volume ? 'Mute playback' : 'Unmute playback'} title={app.volume ? 'Mute' : 'Unmute'}>
+   <span class="hifi-speaker hifi-right" aria-hidden="true"><ReactiveSpeaker /></span>
+   <span class="mute-glyph" aria-hidden="true">{#if !app.volume}<VolumeX size={20} />{:else if app.volume < .5}<Volume1 size={20} />{:else}<Volume2 size={20} />{/if}</span>
   </button>
-  <input class="deck-range deck-level" type="range" min="0" max="1" step="0.01" bind:value={app.volume}
-   style={`--fill:${(app.volume * 100).toFixed(0)}%;--buffer:0%`} aria-label="Playback volume" aria-valuetext={`${Math.round(app.volume * 100)}%`} title="Volume" />
  </div>
 </section>
 
 <style>
- .global-player{--tape-width:112px;display:flex;align-items:center;gap:16px;flex:1 1 640px;min-width:0;max-width:1040px;color:var(--fg)}
+ .global-player{--spk-scale:.66;--spk-w:66px;--spk-h:92px;--tapes-w:220px;display:flex;align-items:center;justify-content:center;gap:12px;flex:1 1 760px;min-width:0;max-width:1080px;color:var(--fg)}
+ /* speakers: the full cabinet artwork, scaled as one piece so screws, port and badge survive */
+ .hifi-speaker{display:block;flex:none;width:var(--spk-w);height:var(--spk-h);position:relative}
+ .hifi-speaker :global(.speaker-cabinet){position:absolute;left:0;top:0;transform:scale(var(--spk-scale));transform-origin:0 0}
+ /* the deck faceplate ties cassette and controls into one unit */
+ .deck-face{flex:1;min-width:0;display:flex;align-items:center;gap:14px;padding:6px 14px 6px 8px;border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--fg) 4%,transparent)}
+ .deck-tapes{flex:none;width:var(--tapes-w);min-width:0}
+ .deck-tapes :global(.cassette-carousel){--cassette-w:112px;--cassette-h:71px;--cassette-step:92px}
+ .deck-console{flex:1;min-width:0;display:grid;gap:0}
+ .deck-head{display:flex;align-items:center;gap:12px;min-width:0}
  .deck-transport{display:flex;align-items:center;gap:4px;flex:none}
  .deck-btn{display:grid;place-items:center;width:44px;height:44px;min-width:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--fg);cursor:pointer;flex:none;transition:background-color 150ms ease-out,color 150ms ease-out,transform 150ms ease-out}
  .deck-btn:hover:enabled{background:color-mix(in srgb,var(--fg) 12%,transparent)}
  .deck-btn:active:enabled{transform:scale(.94)}
  .deck-btn:disabled{opacity:.4;cursor:not-allowed}
- .deck-btn:focus-visible{outline:3px solid var(--focus,var(--accent));outline-offset:2px}
  .main-play{width:56px;height:56px;background:var(--accent);color:var(--deck-on-accent,var(--bg));box-shadow:0 2px 0 color-mix(in srgb,var(--accent) 55%,#000)}
  .main-play:hover:enabled{background:color-mix(in srgb,var(--accent) 86%,var(--fg))}
  .main-play :global(.deck-play-glyph){margin-left:3px}
@@ -78,16 +96,10 @@
  .empty .deck-title{color:var(--fg-dim)}
  .deck-meta{font-size:13px;line-height:18px;color:var(--fg-dim)}
  .deck-meta.error{color:var(--error,#f87171)}
- .deck-line{display:flex;align-items:baseline;gap:12px;min-width:0}
- .deck-line .deck-meta{flex:1}
- .deck-clock{flex:none;font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;color:var(--fg-dim)}
- .deck-seek{display:flex;align-items:center;gap:10px;min-width:0;margin-top:-6px;margin-bottom:-12px}
- .deck-seek .deck-time{display:none}
+ .deck-seek{display:flex;align-items:center;gap:10px;min-width:0;margin:-4px 0 -10px}
  .deck-time{flex:none;min-width:34px;font-size:12px;line-height:16px;font-variant-numeric:tabular-nums;color:var(--fg-dim)}
  .deck-seek .deck-time:last-child{text-align:right}
- .deck-volume{display:flex;align-items:center;gap:2px;flex:none}
- .deck-level{width:96px}
- /* one range style for seek and volume: a 6px rail inside a 44px tall hit area */
+ /* seek: a 6px rail (played, buffered, rest) inside a 44px tall hit area */
  .deck-range{--rail:color-mix(in srgb,var(--fg) 15%,transparent);--buffered:color-mix(in srgb,var(--fg) 42%,transparent);appearance:none;-webkit-appearance:none;flex:1;min-width:0;height:44px;min-height:44px;margin:0;padding:0;background:transparent;cursor:pointer}
  .deck-range:disabled{cursor:not-allowed;opacity:.55}
  .deck-range::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--accent) var(--fill),var(--buffered) var(--fill) var(--buffer),var(--rail) var(--buffer))}
@@ -96,23 +108,46 @@
  .deck-range::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:var(--fg);border:3px solid var(--accent);box-shadow:0 1px 3px #0006}
  .deck-range:hover:enabled::-webkit-slider-thumb,.deck-range:focus-visible::-webkit-slider-thumb{transform:scale(1.15)}
  .deck-range:disabled::-webkit-slider-thumb{visibility:hidden}
- @media(max-width:1180px){.global-player{--tape-width:96px;gap:12px}.deck-level{width:76px}}
- @media(max-width:860px){.global-player :global(.tape-deck){display:none}}
+ /* volume: one fader beside the right speaker; the speaker itself mutes */
+ .deck-volume{display:flex;align-items:center;gap:2px;flex:none}
+ .deck-level{writing-mode:vertical-lr;direction:rtl;width:44px;height:84px;margin:0;padding:0;accent-color:var(--accent);cursor:pointer;background:transparent}
+ .deck-mute{position:relative;display:grid;place-items:center;padding:0;border:0;border-radius:12px;background:transparent;color:var(--fg);cursor:pointer;transition:opacity 150ms ease-out,filter 150ms ease-out}
+ .deck-mute:hover .hifi-speaker{filter:brightness(1.12)}
+ .mute-glyph{position:absolute;right:-6px;bottom:-6px;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--bg-panel);color:var(--fg);border:1px solid var(--border-strong);box-shadow:0 1px 3px #0005}
+ .mute-glyph :global(svg){width:15px;height:15px}
+ .muted .hifi-speaker{filter:saturate(.4) brightness(.7)}
+ .muted .mute-glyph{color:var(--error,#f87171)}
+ @media(max-width:1180px){
+  .global-player{--spk-scale:.52;--spk-w:52px;--spk-h:73px;--tapes-w:128px;gap:10px}
+  .deck-face{gap:10px;padding:6px 10px 6px 6px}
+  .deck-tapes :global(.cassette-carousel){--cassette-w:104px;--cassette-h:66px;--cassette-step:120px}
+  .deck-level{height:72px}
+ }
+ /* tablets: no room for cabinets, so the deck keeps the cassette and a plain mute + fader */
+ @media(max-width:1023px){
+  .hifi-left{display:none}
+  .deck-mute .hifi-speaker{display:none}
+  .deck-mute{width:44px;height:44px;border-radius:50%}
+  .deck-mute:hover{background:color-mix(in srgb,var(--fg) 12%,transparent)}
+  .mute-glyph{position:static;width:auto;height:auto;border:0;background:none;box-shadow:none}
+  .mute-glyph :global(svg){width:20px;height:20px}
+  .deck-level{writing-mode:horizontal-tb;direction:ltr;width:76px;height:44px}
+  .deck-face{border:0;background:none;padding:0}
+ }
  @media(max-width:680px){
-  .global-player{--tape-width:60px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto 44px;grid-template-areas:'tape title transport' 'tape meta transport' 'seek seek volume';align-items:center;gap:0 10px;flex:1 1 100%;max-width:none}
-  .global-player :global(.tape-deck){display:block;grid-area:tape}
+  .global-player{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:auto auto 44px;grid-template-areas:'tape title transport' 'tape meta transport' 'seek seek volume';align-items:center;gap:0 10px;flex:1 1 100%;max-width:none}
+  .deck-face,.deck-console,.deck-head{display:contents}
+  .deck-tapes{grid-area:tape;width:76px}
+  .deck-tapes :global(.cassette-carousel){--cassette-w:72px;--cassette-h:46px;--cassette-step:96px;mask-image:none}
+  .deck-tapes :global(.cassette:not(.chosen)){visibility:hidden}
   .deck-track{display:contents}
   .deck-title{grid-area:title;align-self:end;font-size:15px}
-  .deck-line{display:contents}
   .deck-meta{grid-area:meta;align-self:start;font-size:12px;line-height:16px}
-  .deck-clock{display:none}
-  .deck-seek{margin:0}
-  .deck-seek .deck-time{display:block}
   .deck-transport{grid-area:transport;gap:0}
   .main-play{width:48px;height:48px}
-  .deck-seek{grid-area:seek}
+  .deck-seek{grid-area:seek;margin:0}
   .deck-volume{grid-area:volume}
   .deck-level{display:none}
  }
- @media(prefers-reduced-motion:reduce){.deck-btn,.deck-range::-webkit-slider-thumb{transition:none}.main-play :global(.deck-spin){animation:none}}
+ @media(prefers-reduced-motion:reduce){.deck-btn,.deck-mute,.deck-range::-webkit-slider-thumb{transition:none}.main-play :global(.deck-spin){animation:none}}
 </style>

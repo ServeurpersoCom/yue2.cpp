@@ -1,8 +1,10 @@
 /* topbar.css: the header deck (brand + engine, player, theme and settings).
    Loaded last. The tripled [data-theme] outranks the theme skins so one layout
    holds in every theme; themes still own colour through their variables. */
-html:root[data-theme] { --topbar-h: 92px; --deck-on-accent: var(--bg); }
+html:root[data-theme] { --topbar-h: 120px; --deck-on-accent: var(--bg); }
 html:root[data-theme='studio'] { --deck-on-accent: #ffffff; }
+@media (max-width: 1180px) { html:root[data-theme] { --topbar-h: 108px; } }
+@media (max-width: 1023px) { html:root[data-theme] { --topbar-h: 96px; } }
 @media (max-width: 680px) { html:root[data-theme] { --topbar-h: 152px; } }
 
 html:root[data-theme][data-theme][data-theme] .yue2-app > header.topbar {
@@ -10,6 +12,8 @@ html:root[data-theme][data-theme][data-theme] .yue2-app > header.topbar {
 	display: flex; flex-wrap: nowrap; align-items: center; align-content: center; gap: 24px;
 	padding: 0 20px; background: var(--bg-panel); box-shadow: none;
 }
+/* Colorful is the one theme whose identity is a gradient; behind the speakers it reads as stage lighting. */
+html:root[data-theme='colorful'][data-theme][data-theme] .yue2-app > header.topbar { background: linear-gradient(100deg,#49216c,#24346a 60%,#125357); }
 /* Studio Glass keeps its frosted material; it is the theme, not decoration. */
 html:root[data-theme='studio'][data-theme][data-theme] .yue2-app > header.topbar { background: #ffffffb8; backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
 @media (min-width: 681px) { html:root[data-theme][data-theme][data-theme] .yue2-app .studio-frame { height: calc(100dvh - var(--topbar-h)); } }
@@ -30,7 +34,7 @@ html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .brand-nam
 html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .topbar-theme { position: relative; display: flex; align-items: center; margin: 0; color: var(--fg-dim); }
 .yue2-app header.topbar .topbar-theme > svg { position: absolute; left: 12px; pointer-events: none; }
 html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .topbar-theme select {
-	width: 168px; height: 44px; min-height: 44px; padding: 0 10px 0 36px; font-size: 13px;
+	width: 156px; height: 44px; min-height: 44px; padding: 0 10px 0 36px; font-size: 13px;
 	color: var(--fg); background-color: transparent; border: 1px solid var(--border-strong);
 	border-radius: var(--theme-control-radius, 10px); box-shadow: none; cursor: pointer;
 }
@@ -42,8 +46,9 @@ html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .settings-
 @media (max-width: 1180px) {
 	html:root[data-theme][data-theme][data-theme] .yue2-app > header.topbar { gap: 16px; padding: 0 16px; }
 	.yue2-app header.topbar .engine-status { max-width: 150px; }
-	.yue2-app header.topbar .topbar-theme > svg { display: none; }
-	html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .topbar-theme select { width: 140px; padding-left: 12px; }
+	/* the theme picker folds to its palette icon; the native list still names every theme */
+	.yue2-app header.topbar .topbar-theme > svg { left: 12px; color: var(--fg); }
+	html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .topbar-theme select { width: 44px; padding: 0; color: transparent; border-radius: 50%; background-image: none; }
 }
 
 /* phones: brand and tools on top, the deck below; offsets follow the header height */
@@ -62,3 +67,5 @@ html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .deck-rang
 html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .deck-range:focus-visible::-webkit-slider-runnable-track { box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--focus, var(--accent)); }
 html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .deck-range:focus-visible::-moz-range-track { box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--focus, var(--accent)); }
 html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .deck-btn:focus-visible { outline: 3px solid var(--focus, var(--accent)); outline-offset: 2px; }
+html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .deck-mute:focus-visible,
+html:root[data-theme][data-theme][data-theme] .yue2-app header.topbar .deck-level:focus-visible { outline: 3px solid var(--focus, var(--accent)); outline-offset: 2px; }

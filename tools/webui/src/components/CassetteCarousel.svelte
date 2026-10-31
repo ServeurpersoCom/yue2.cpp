@@ -1,9 +1,10 @@
 <script lang="ts">
- import { onDestroy } from 'svelte';
+ import { onDestroy, tick } from 'svelte';
  import { app } from '../lib/state.svelte.js';
  import { player, selectTrack, resume } from '../lib/player.svelte.js';
  import type { Song } from '../lib/types.js';
  let current = $derived(Math.max(0, app.songs.findIndex(song => song.id === player.song?.id)));
+ let stage: HTMLDivElement | undefined;
  let turning = $state(false), timer: ReturnType<typeof setTimeout>, lastWheel = 0, pointerX = 0, swiped = false;
  let tapes = $derived(app.songs.length ? app.songs : [null]);
  let visibleTapes = $derived(tapes.map((song,index) => ({song,index,distance:offset(index)})).filter(tape => Math.abs(tape.distance) <= 2));
@@ -33,6 +34,8 @@
  function key(event: KeyboardEvent) {
   if (!['ArrowLeft','ArrowRight'].includes(event.key)) return;
   event.preventDefault(); turn(event.key === 'ArrowRight' ? 1 : -1);
+  // keep keyboard focus on the cassette that is now in the slot
+  void tick().then(() => stage?.querySelector<HTMLButtonElement>('.cassette.chosen')?.focus());
  }
  function tiles(seed: number) {
   return Array.from({length:80}, (_,i) => ({x:13+(i%16)*9,y:12+Math.floor(i/16)*8,hue:(seed*47+(i*37)%130)%360,on:((i*17+seed*13)%7)<4}));
@@ -40,9 +43,9 @@
 </script>
 
 <div class="cassette-carousel" class:turning role="group" aria-label="Cassette track carousel" aria-roledescription="carousel" onwheel={wheel}>
- <div class="carousel-stage" onpointerdown={event => { pointerX = event.clientX; swiped = false; }} onpointerup={event => { if (Math.abs(event.clientX-pointerX)>30) { swiped = true; turn(event.clientX<pointerX?1:-1); } }} role="presentation">
+ <div class="carousel-stage" bind:this={stage} onpointerdown={event => { pointerX = event.clientX; swiped = false; }} onpointerup={event => { if (Math.abs(event.clientX-pointerX)>30) { swiped = true; turn(event.clientX<pointerX?1:-1); } }} role="presentation">
   {#each visibleTapes as {song,index,distance} (song?.id ?? index)}
-   <button class="cassette" class:chosen={distance===0} class:spinning={(distance===0 && player.playing) || turning} style={`--offset:${distance};--scale:${1-Math.abs(distance)*.12};--angle:${distance*-34}deg;z-index:${10-Math.abs(distance)};opacity:${Math.abs(distance)>2?0:1-Math.abs(distance)*.25}`} aria-label={song ? `Play cassette ${song.name}` : 'No tracks saved'} onkeydown={key} aria-current={distance===0?'true':undefined} tabindex={Math.abs(distance)>2?-1:0} disabled={!song} onclick={event => { if (!swiped || event.detail===0) choose(song); swiped = false; }} title={song?.name || 'Your next record'}>
+   <button class="cassette" class:chosen={distance===0} class:spinning={(distance===0 && player.playing) || turning} style={`--offset:${distance};--scale:${1-Math.abs(distance)*.12};--angle:${distance*-34}deg;z-index:${10-Math.abs(distance)};opacity:${Math.abs(distance)>2?0:1-Math.abs(distance)*.25}`} aria-label={song ? `Play cassette ${song.name}` : 'No tracks saved'} onkeydown={key} aria-current={distance===0?'true':undefined} tabindex={distance===0?0:-1} disabled={!song} onclick={event => { if (!swiped || event.detail===0) choose(song); swiped = false; }} title={song?.name || 'Your next record'}>
     <svg viewBox="0 0 170 108" aria-hidden="true">
      <rect x="2" y="2" width="166" height="104" rx="10" fill="#101115" stroke="#7d818a" stroke-width="2"/>
      <rect x="7" y="7" width="156" height="76" rx="5" fill="#242630" stroke="#545762"/>
@@ -64,9 +67,9 @@
 </div>
 
 <style>
- .cassette-carousel{height:64px;min-width:0;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
+ .cassette-carousel{--cassette-w:94px;--cassette-h:60px;--cassette-step:88px;height:calc(var(--cassette-h) + 4px);min-width:0;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
  .carousel-stage{height:100%;position:relative;touch-action:pan-y}
- .cassette{position:absolute;left:50%;top:2px;width:94px;height:60px;padding:0;border:0;background:none;cursor:pointer;transform:translateX(calc(-50% + var(--offset)*88px)) perspective(500px) rotateY(var(--angle)) scale(var(--scale));transition:transform .65s cubic-bezier(.22,.8,.2,1),opacity .5s;filter:drop-shadow(0 4px 3px #0009)}
+ .cassette{position:absolute;left:50%;top:2px;width:var(--cassette-w);height:var(--cassette-h);padding:0;border:0;background:none;cursor:pointer;transform:translateX(calc(-50% + var(--offset)*var(--cassette-step))) perspective(500px) rotateY(var(--angle)) scale(var(--scale));transition:transform .65s cubic-bezier(.22,.8,.2,1),opacity .5s;filter:drop-shadow(0 4px 3px #0009)}
  .cassette svg{width:100%;height:100%;display:block}.cassette:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:5px}.cassette:disabled{cursor:default;opacity:.55!important}
  .reel{transform-box:fill-box;transform-origin:center;animation:reel-spin 1.7s linear infinite;animation-play-state:paused}.spinning .reel{animation-play-state:running}
  @keyframes reel-spin{to{transform:rotate(360deg)}}
