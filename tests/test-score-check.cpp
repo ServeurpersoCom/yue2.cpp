@@ -59,6 +59,18 @@ int main(int argc, char ** argv) {
     check(yue2_score_stray_colons("\"A:7\"C[K:G]D") == 0, "colons in chords and inline fields are not stray");
     check(yue2_score_excerpt("K:C\n\xd0\xb0\xe4\xb8", 64) == "K:C\n????", "a log excerpt is printable ASCII");
     check(yue2_score_excerpt("abcdef", 3) == "abc", "an excerpt stops at its limit");
+    // yue2_score_fill_header: a plan whose only fault is a dropped header is made
+    // singable with the trained defaults; one wrong in the body still is not.
+    auto rescued = [](const std::string & abc) {
+        return !yue2_score_problem(abc).empty() && yue2_score_problem(yue2_score_fill_header(abc)).empty();
+    };
+    check(rescued("X:1\nV: Vocal\nc4d4e4f4|g4a4b4c'4|\nV: Ins\nZ4|\n"), "a headerless plan is filled and sings");
+    check(rescued("X:1\nM:4/4\nL:1/16\nV: Vocal\nc4d4e4f4|\nV: Ins\nZ4|\n"), "a dropped key is filled in after meter and length");
+    check(rescued("X:1\nK:C\nV: Vocal\nc4d4e4f4|\nV: Ins\nZ4|\n"), "a dropped meter and length are filled in");
+    check(rescued("V: Vocal\nc4d4e4f4|\nV: Ins\nZ4|\n"), "a plan with no X: line is filled at its top");
+    check(yue2_score_fill_header(GOOD) == GOOD, "a well-formed header is left untouched");
+    check(!yue2_score_problem(yue2_score_fill_header("V: Vocal\nc4 d4\nV: Ins\nZ\n")).empty(), "a body without bars is not rescued");
+    check(!yue2_score_problem(yue2_score_fill_header("X:1\nV: Vocal\nc4:d4|\nV: Ins\nZ4|\n")).empty(), "stray colons are not rescued");
     if (failures) {
         fprintf(stderr, "[ERROR] %d checks failed\n", failures);
         return 1;

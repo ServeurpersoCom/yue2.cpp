@@ -524,6 +524,20 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                 problem      = yue2_score_problem(scores[i]);
             }
             if (!problem.empty()) {
+                // A plan the model simply would not give a header is salvaged by
+                // writing the trained defaults in, rather than thrown away once
+                // the retries are spent; a plan wrong in other ways still fails.
+                std::string repaired = yue2_score_fill_header(scores[i]);
+                if (repaired != scores[i] && yue2_score_problem(repaired).empty()) {
+                    fprintf(stderr,
+                            "[Pipeline] score of song %d had no usable header; filled in M:/L:/K: defaults and keeping it\n",
+                            i + 1);
+                    scores[i]  = repaired;
+                    abc_ids[i] = bpe_encode(tok, repaired);
+                    problem.clear();
+                }
+            }
+            if (!problem.empty()) {
                 fprintf(stderr, "[Pipeline] score of song %d as written:\n%s\n", i + 1,
                         yue2_score_excerpt(scores[i], 800).c_str());
                 fprintf(stderr, "[Pipeline] FATAL: the score the model wrote for song %d cannot be sung: %s. %s\n",

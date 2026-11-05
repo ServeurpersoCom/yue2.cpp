@@ -119,3 +119,69 @@ static std::string yue2_score_problem(const std::string & abc) {
     }
     return "";
 }
+
+// Fills a plan's missing M:/L:/K: header with the conventions the model is
+// trained on, so a score whose only fault is a dropped header can still be
+// sung instead of thrown away. Well-formed fields the model did write are kept
+// and only the missing ones are added, ahead of the body (after an opening
+// X: line when there is one). The caller re-checks the result with
+// yue2_score_problem, so a score this cannot rescue - stray colons, no bars -
+// still fails as before.
+static std::string yue2_score_fill_header(const std::string & abc) {
+    bool   meter = false, length = false, key = false;
+    size_t from = 0;
+    while (from < abc.size()) {
+        size_t      nl   = abc.find('\n', from);
+        std::string line = abc.substr(from, nl == std::string::npos ? std::string::npos : nl - from);
+        from             = nl == std::string::npos ? abc.size() : nl + 1;
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        if (line.empty() || line[0] == '%' || !yue2_score_field(line)) {
+            continue;
+        }
+        std::string v = line.substr(2);
+        size_t      a = v.find_first_not_of(" \t");
+        v             = a == std::string::npos ? std::string() : v.substr(a);
+        while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) {
+            v.pop_back();
+        }
+        if (!key && line[0] == 'M') {
+            meter = meter || yue2_score_fraction(v) || v == "C" || v == "C|" || v == "none";
+        } else if (!key && line[0] == 'L') {
+            length = length || yue2_score_fraction(v);
+        } else if (line[0] == 'K') {
+            key = key || !v.empty();
+        }
+    }
+    if (meter && length && key) {
+        return abc;
+    }
+    // The meter and unit length go into the header; a key must follow them,
+    // since yue2_score_problem counts M:/L: only before the first K:.
+    std::string head;
+    if (!meter) {
+        head += "M:4/4\n";
+    }
+    if (!length) {
+        head += "L:1/16\n";
+    }
+    std::string key_line = key ? std::string() : "K:C\n";
+    // M:/L: after an opening X: line, or at the very top when there is none.
+    size_t at = 0;
+    if (abc.compare(0, 2, "X:") == 0) {
+        size_t nl = abc.find('\n');
+        at        = nl == std::string::npos ? abc.size() : nl + 1;
+    }
+    std::string out  = abc.substr(0, at) + head;
+    std::string rest = abc.substr(at);
+    if (key_line.empty()) {
+        return out + rest;
+    }
+    // K: ends the header, so it is written in just before the body, which the
+    // first bar line opens; with no bar line the score cannot be sung anyway.
+    size_t bar    = rest.find('|');
+    size_t insert = bar == std::string::npos ? rest.size() : rest.rfind('\n', bar);
+    insert        = insert == std::string::npos ? 0 : (bar == std::string::npos ? rest.size() : insert + 1);
+    return out + rest.substr(0, insert) + key_line + rest.substr(insert);
+}
