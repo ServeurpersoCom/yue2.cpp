@@ -35,3 +35,7 @@ link_ggml_backends(test-sheetsage)
 add_executable(test-tokenizer test-tokenizer.cpp)
 target_link_libraries(test-tokenizer PRIVATE yyjson)
 link_ggml_backends(test-tokenizer)
+
+# test-score-check: a planned score nothing can be sung from, pure CPU, no ggml.
+add_executable(test-score-check test-score-check.cpp)
+target_include_directories(test-score-check PRIVATE ${CMAKE_SOURCE_DIR}/src)

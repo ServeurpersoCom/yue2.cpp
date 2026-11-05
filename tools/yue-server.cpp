@@ -529,6 +529,11 @@ static bool validate(const std::string & json, httplib::Response & res, Yue2Requ
         res.set_content(json_string("error", "synth_batch_size must be between 1 and 9"), "application/json");
         return false;
     }
+    if (r->plan_retries < 0 || r->plan_retries > 8) {
+        res.status = 400;
+        res.set_content(json_string("error", "plan_retries must be between 0 and 8"), "application/json");
+        return false;
+    }
     if (!yue2_sampling_valid(r->abc_sampling, "abc") || !yue2_sampling_valid(r->semantic_sampling, "semantic")) {
         res.status = 400;
         res.set_content(json_string("error", "sampling preset outside the protocol bounds"), "application/json");
