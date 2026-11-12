@@ -528,13 +528,17 @@ static bool pipeline_generate(Yue2Pipeline *          p,
                 // writing the trained defaults in, rather than thrown away once
                 // the retries are spent; a plan wrong in other ways still fails.
                 std::string repaired = yue2_score_fill_header(scores[i]);
-                if (repaired != scores[i] && yue2_score_problem(repaired).empty()) {
-                    fprintf(stderr,
-                            "[Pipeline] score of song %d had no usable header; filled in M:/L:/K: defaults and keeping it\n",
-                            i + 1);
-                    scores[i]  = repaired;
-                    abc_ids[i] = bpe_encode(tok, repaired);
-                    problem.clear();
+                if (repaired != scores[i]) {
+                    // with the header filled in, what is still wrong is the reason, not the header
+                    std::string left = yue2_score_problem(repaired);
+                    if (left.empty()) {
+                        fprintf(stderr,
+                                "[Pipeline] score of song %d had no usable header; filled in M:/L:/K: defaults and keeping it\n",
+                                i + 1);
+                        scores[i]  = repaired;
+                        abc_ids[i] = bpe_encode(tok, repaired);
+                    }
+                    problem = left;
                 }
             }
             if (!problem.empty()) {

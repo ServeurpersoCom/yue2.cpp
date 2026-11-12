@@ -71,6 +71,14 @@ int main(int argc, char ** argv) {
     check(yue2_score_fill_header(GOOD) == GOOD, "a well-formed header is left untouched");
     check(!yue2_score_problem(yue2_score_fill_header("V: Vocal\nc4 d4\nV: Ins\nZ\n")).empty(), "a body without bars is not rescued");
     check(!yue2_score_problem(yue2_score_fill_header("X:1\nV: Vocal\nc4:d4|\nV: Ins\nZ4|\n")).empty(), "stray colons are not rescued");
+    {
+        // a plan with no header and no bars is reported for what is left once the header is filled in
+        const char * barless = "V: Vocal\nc4 d4\nV: Ins\nZ\n";
+        const std::string before = yue2_score_problem(barless);
+        const std::string after  = yue2_score_problem(yue2_score_fill_header(barless));
+        check(!after.empty() && after != before && after.find("M:") == std::string::npos,
+              "the reason left after the header is filled in names no header");
+    }
     if (failures) {
         fprintf(stderr, "[ERROR] %d checks failed\n", failures);
         return 1;
