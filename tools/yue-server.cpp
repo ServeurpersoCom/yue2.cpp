@@ -720,6 +720,7 @@ static void print_usage(const char * prog) {
             "  --max-seq <N>          KV cache size (default: model context)\n"
             "  --vae-core <N>         VAE tile core frames (default: 512)\n"
             "  --vae-halo <N>         VAE tile halo frames (default: 16)\n"
+            "  --nar-chunk <N>        Acoustic chunk frame cap (default: what the context holds)\n"
             "  --no-fa                Disable flash attention\n"
             "  --clamp-fp16           Clamp hidden states to FP16 range\n",
             prog);
@@ -767,6 +768,8 @@ int main(int argc, char ** argv) {
             params.vae_core = atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--vae-halo") && !last) {
             params.vae_halo = atoi(argv[++i]);
+        } else if (!strcmp(argv[i], "--nar-chunk") && !last) {
+            params.nar_chunk = atoi(argv[++i]);
         } else if (!strcmp(argv[i], "--no-fa")) {
             params.no_fa = true;
         } else if (!strcmp(argv[i], "--clamp-fp16")) {

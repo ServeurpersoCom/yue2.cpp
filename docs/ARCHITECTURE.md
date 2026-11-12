@@ -517,7 +517,11 @@ over. Each chunk carries its own sequence, `prefix + its own codes +
 MUSIC_END`, so it gets its own AR prefill. The nominal case is one single
 chunk, and there the sequence is exactly what the generation left in the
 cache: the end token completes it and the prefill never runs. A prefix over
-6573 tokens is what pushes a full length song to two chunks.
+6573 tokens is what pushes a full length song to two chunks. `--nar-chunk`
+caps the chunk below that: without flash attention the attention scores of
+a chunk grow with the square of its length, so a smaller chunk is what
+keeps a long song inside a card's memory while the song itself keeps the
+whole context.
 
 The noise is drawn once for the whole song and each chunk takes its view of
 it, again the rule of the reference.
@@ -748,6 +752,7 @@ Debug:
   --max-seq <N>          KV cache size (default: model context)
   --vae-core <N>         VAE tile core frames (default: 512)
   --vae-halo <N>         VAE tile halo frames (default: 16)
+  --nar-chunk <N>        Acoustic chunk frame cap (default: what the context holds)
   --no-fa                Disable flash attention
   --clamp-fp16           Clamp hidden states to FP16 range
   --dump <dir>           Dump intermediate tensors
@@ -789,6 +794,7 @@ Debug:
   --max-seq <N>          KV cache size (default: model context)
   --vae-core <N>         VAE tile core frames (default: 512)
   --vae-halo <N>         VAE tile halo frames (default: 16)
+  --nar-chunk <N>        Acoustic chunk frame cap (default: what the context holds)
   --no-fa                Disable flash attention
   --clamp-fp16           Clamp hidden states to FP16 range
 ```

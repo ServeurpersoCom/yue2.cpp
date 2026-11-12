@@ -48,6 +48,7 @@ struct Yue2PipelineParams {
     bool clamp_fp16 = false;              // clamp hidden states on sub-Ampere CUDA
     int  vae_core   = 512;                // VAE tile core frames
     int  vae_halo   = 16;                 // VAE tile halo frames
+    int  nar_chunk  = 0;                  // acoustic chunk frame cap, 0 = what the context holds
 
     const char * dump_dir     = nullptr;  // probe dumps of the first track for the cossim harness
     const char * adapters_dir = nullptr;  // the adapters requests can stack, none without it
@@ -572,6 +573,9 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             fprintf(stderr, "[Pipeline] FATAL: prefix %zu leaves no acoustic context in %d\n", prefixes[i].size(),
                     context);
             return false;
+        }
+        if (p->params.nar_chunk > 0 && chunk_sizes[i] > p->params.nar_chunk) {
+            chunk_sizes[i] = p->params.nar_chunk;
         }
         for (int j = 0; j < M; j++) {
             Yue2Song & song = (*songs)[(size_t) i * M + j];
