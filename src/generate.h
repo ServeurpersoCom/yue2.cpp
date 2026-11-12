@@ -16,6 +16,7 @@
 #include "sampling.h"
 #include "timer.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -61,7 +62,7 @@ static bool yue2_generate(Qwen3LM *                             lm,
                           const std::vector<std::vector<int>> & prefixes,
                           const std::vector<std::vector<int>> & negatives,
                           float                                 cfg_scale,
-                          const Yue2Sampling &                  s,
+                          const Yue2Sampling &                  requested,
                           int64_t                               seed,
                           Yue2Phase                             phase,
                           std::vector<Yue2Generation> *         out,
@@ -74,14 +75,24 @@ static bool yue2_generate(Qwen3LM *                             lm,
         fprintf(stderr, "[AR] FATAL: guidance %.3f needs an unconditional prefix per sequence\n", (double) cfg_scale);
         return false;
     }
-    // Every set holds its prefix, the budget and the end token
+    // Every set holds its prefix, the budget and the end token. A budget the
+    // context cannot hold shrinks to the room left, and the stream ends
+    // truncated there; only a room below the stage's minimum stops it.
+    Yue2Sampling s = requested;
     for (int i = 0; i < B; i++) {
         size_t longest = guided && negatives[i].size() > prefixes[i].size() ? negatives[i].size() : prefixes[i].size();
-        if ((int) longest + s.max_tokens + 1 > context) {
-            fprintf(stderr, "[AR] FATAL: prefix %zu + budget %d + end exceeds context %d\n", longest, s.max_tokens,
-                    context);
+        int    room    = context - (int) longest - 1;
+        if (room >= s.max_tokens) {
+            continue;
+        }
+        if (room < std::max(1, s.min_tokens)) {
+            fprintf(stderr, "[AR] FATAL: prefix %zu leaves %d of context %d, the stage needs at least %d\n", longest,
+                    room > 0 ? room : 0, context, std::max(1, s.min_tokens));
             return false;
         }
+        fprintf(stderr, "[AR] %s budget clamped to %d by the KV cache (prompt %zu tokens)\n",
+                phase == YUE2_PHASE_ABC ? "Score" : "Frame", room, longest);
+        s.max_tokens = room;
     }
 
     const int N = guided ? 2 * B : B;
