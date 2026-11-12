@@ -124,7 +124,8 @@ static std::string yue2_score_problem(const std::string & abc) {
 // trained on, so a score whose only fault is a dropped header can still be
 // sung instead of thrown away. Well-formed fields the model did write are kept
 // and only the missing ones are added, ahead of the body (after an opening
-// X: line when there is one). The caller re-checks the result with
+// X: line when there is one); text before the first voice that is neither a
+// field nor a comment goes with the fill. The caller re-checks the result with
 // yue2_score_problem, so a score this cannot rescue - stray colons, no bars -
 // still fails as before.
 static std::string yue2_score_fill_header(const std::string & abc) {
@@ -157,6 +158,31 @@ static std::string yue2_score_fill_header(const std::string & abc) {
     if (meter && length && key) {
         return abc;
     }
+    // A header the model dropped fields from often carries its stray text too:
+    // before the first voice, only fields, comments and blank lines are kept.
+    std::string kept;
+    size_t      voice_at = std::string::npos;
+    from                 = 0;
+    while (from < abc.size()) {
+        size_t      nl   = abc.find('\n', from);
+        std::string raw  = abc.substr(from, nl == std::string::npos ? std::string::npos : nl - from + 1);
+        std::string line = raw;
+        from             = nl == std::string::npos ? abc.size() : nl + 1;
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+            line.pop_back();
+        }
+        bool voice = yue2_score_field(line) && line[0] == 'V';
+        if (voice_at == std::string::npos && voice) {
+            voice_at = kept.size();
+        }
+        if (voice_at == std::string::npos && !line.empty() && line[0] != '%' && !yue2_score_field(line)) {
+            continue;
+        }
+        kept += raw;
+    }
+    if (voice_at == std::string::npos) {
+        kept = abc;
+    }
     // The meter and unit length go into the header; a key must follow them,
     // since yue2_score_problem counts M:/L: only before the first K:.
     std::string head;
@@ -169,19 +195,25 @@ static std::string yue2_score_fill_header(const std::string & abc) {
     std::string key_line = key ? std::string() : "K:C\n";
     // M:/L: after an opening X: line, or at the very top when there is none.
     size_t at = 0;
-    if (abc.compare(0, 2, "X:") == 0) {
-        size_t nl = abc.find('\n');
-        at        = nl == std::string::npos ? abc.size() : nl + 1;
+    if (kept.compare(0, 2, "X:") == 0) {
+        size_t nl = kept.find('\n');
+        at        = nl == std::string::npos ? kept.size() : nl + 1;
     }
-    std::string out  = abc.substr(0, at) + head;
-    std::string rest = abc.substr(at);
+    std::string out  = kept.substr(0, at) + head;
+    std::string rest = kept.substr(at);
     if (key_line.empty()) {
         return out + rest;
     }
-    // K: ends the header, so it is written in just before the body, which the
-    // first bar line opens; with no bar line the score cannot be sung anyway.
-    size_t bar    = rest.find('|');
-    size_t insert = bar == std::string::npos ? rest.size() : rest.rfind('\n', bar);
-    insert        = insert == std::string::npos ? 0 : (bar == std::string::npos ? rest.size() : insert + 1);
+    // K: ends the header, so it is written in just before the first voice, or
+    // before the first bar line with no voice; with neither the score cannot
+    // be sung anyway.
+    size_t insert;
+    if (voice_at != std::string::npos) {
+        insert = voice_at - at;
+    } else {
+        size_t bar = rest.find('|');
+        insert     = bar == std::string::npos ? rest.size() : rest.rfind('\n', bar);
+        insert     = insert == std::string::npos ? 0 : (bar == std::string::npos ? rest.size() : insert + 1);
+    }
     return out + rest.substr(0, insert) + key_line + rest.substr(insert);
 }

@@ -69,6 +69,18 @@ int main(int argc, char ** argv) {
     check(rescued("X:1\nK:C\nV: Vocal\nc4d4e4f4|\nV: Ins\nZ4|\n"), "a dropped meter and length are filled in");
     check(rescued("V: Vocal\nc4d4e4f4|\nV: Ins\nZ4|\n"), "a plan with no X: line is filled at its top");
     check(yue2_score_fill_header(GOOD) == GOOD, "a well-formed header is left untouched");
+    {
+        // a plan that dropped its key and wrote stray text in its header instead
+        const char * stray_head =
+            "X:1\nT:\nM:2/4\nL:1/16\nQtre Ins2=\"\n: VocalIns Ins Insadc2|B8|\n% verse\nV: Vocal\nM:1/4\nA4|\n"
+            "V: Ins\nM:1/4\nZ|\nV: Vocal\nM:2/4\nB4c3c|d2d2d2c2|B4z4|\nV: Ins\nZ4|\n";
+        const std::string filled = yue2_score_fill_header(stray_head);
+        check(rescued(stray_head), "stray text before the first voice goes with the filled header");
+        check(filled.find("Qtre") == std::string::npos && filled.find("VocalIns") == std::string::npos,
+              "the stray header lines are dropped");
+        check(filled.find("K:C\nV: Vocal") != std::string::npos, "the key goes in before the first voice");
+        check(filled.find("% verse") != std::string::npos, "comments before the first voice stay");
+    }
     check(!yue2_score_problem(yue2_score_fill_header("V: Vocal\nc4 d4\nV: Ins\nZ\n")).empty(), "a body without bars is not rescued");
     check(!yue2_score_problem(yue2_score_fill_header("X:1\nV: Vocal\nc4:d4|\nV: Ins\nZ4|\n")).empty(), "stray colons are not rescued");
     {
