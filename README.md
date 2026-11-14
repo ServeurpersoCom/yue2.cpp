@@ -182,6 +182,7 @@ Debug:
   --max-seq <N>          KV cache size (default: model context)
   --vae-core <N>         VAE tile core frames (default: 512)
   --vae-halo <N>         VAE tile halo frames (default: 16)
+  --nar-chunk <N>        Acoustic chunk frame cap (default: what the context holds)
   --no-fa                Disable flash attention
   --clamp-fp16           Clamp hidden states to FP16 range
 ```
