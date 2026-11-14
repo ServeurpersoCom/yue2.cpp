@@ -22,6 +22,7 @@
 #include "model-store.h"
 #include "nar.h"
 #include "request.h"
+#include "score-check.h"
 #include "timer.h"
 #include "torch-cpu-rng.h"
 #include "vae-enc.h"
@@ -434,6 +435,10 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     if (!yue2_sampling_valid(r.abc_sampling, "abc") || !yue2_sampling_valid(r.semantic_sampling, "semantic")) {
         return false;
     }
+    if (r.plan_retries < 0 || r.plan_retries > 8) {
+        fprintf(stderr, "[Pipeline] FATAL: plan_retries must be between 0 and 8\n");
+        return false;
+    }
     std::vector<AdapterUse> ar_adapters, nar_adapters;
     if (!pipeline_adapters(p, r, &ar_adapters, &nar_adapters)) {
         return false;
@@ -498,6 +503,54 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             abc_ids[i]   = plans[i].tokens;
             scores[i]    = bpe_decode(tok, abc_ids[i]);
             truncated[i] = plans[i].truncated;
+            // a plan nothing can be sung from is planned again on seeds no
+            // other song of the batch draws, and stops the song before the
+            // long stage once the retries are spent
+            std::string problem = yue2_score_problem(scores[i]);
+            for (int attempt = 1; !problem.empty() && attempt <= r.plan_retries; attempt++) {
+                const int64_t seed = r.lm_seed + i + (int64_t) attempt * B;
+                fprintf(stderr,
+                        "[Pipeline] score of song %d cannot be sung: %s; planning it again with lm_seed %lld "
+                        "(%d of %d)\n",
+                        i + 1, problem.c_str(), (long long) seed, attempt, r.plan_retries);
+                std::vector<Yue2Generation> again;
+                if (!yue2_generate(lm, &p->kv, { open }, {}, 1.0f, r.abc_sampling, seed, YUE2_PHASE_ABC, &again,
+                                   cancelled, cancel_data)) {
+                    return false;
+                }
+                abc_ids[i]   = again[0].tokens;
+                scores[i]    = bpe_decode(tok, abc_ids[i]);
+                truncated[i] = again[0].truncated;
+                problem      = yue2_score_problem(scores[i]);
+            }
+            if (!problem.empty()) {
+                // A plan the model simply would not give a header is salvaged by
+                // writing the trained defaults in, rather than thrown away once
+                // the retries are spent; a plan wrong in other ways still fails.
+                std::string repaired = yue2_score_fill_header(scores[i]);
+                if (repaired != scores[i]) {
+                    // with the header filled in, what is still wrong is the reason, not the header
+                    std::string left = yue2_score_problem(repaired);
+                    if (left.empty()) {
+                        fprintf(stderr,
+                                "[Pipeline] score of song %d had no usable header; filled in M:/L:/K: defaults and keeping it\n",
+                                i + 1);
+                        scores[i]  = repaired;
+                        abc_ids[i] = bpe_encode(tok, repaired);
+                    }
+                    problem = left;
+                }
+            }
+            if (!problem.empty()) {
+                fprintf(stderr, "[Pipeline] score of song %d as written:\n%s\n", i + 1,
+                        yue2_score_excerpt(scores[i], 800).c_str());
+                fprintf(stderr, "[Pipeline] FATAL: the score the model wrote for song %d cannot be sung: %s. %s\n",
+                        i + 1, problem.c_str(),
+                        r.adapters.empty() ? "Draw another seed."
+                                           : "Adapters past their limits on the score half do this: lower their "
+                                             "strengths or draw another seed.");
+                return false;
+            }
         }
     }
 
