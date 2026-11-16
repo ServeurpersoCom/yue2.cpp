@@ -251,19 +251,16 @@ static struct ggml_tensor * nar_build_attn(struct ggml_context * ctx,
     int                 kv_dim = Nkv * D;
     if (ly->qkv) {
         struct ggml_tensor * qkv = qwen3_linear(ctx, ly->qkv, x);
-        q                        = ggml_cont(ctx, ggml_view_3d(ctx, qkv, q_dim, N, M, qkv->nb[1], qkv->nb[2], 0));
-        k = ggml_cont(ctx, ggml_view_3d(ctx, qkv, kv_dim, N, M, qkv->nb[1], qkv->nb[2], (size_t) q_dim * qkv->nb[0]));
-        v = ggml_cont(
-            ctx, ggml_view_3d(ctx, qkv, kv_dim, N, M, qkv->nb[1], qkv->nb[2], (size_t) (q_dim + kv_dim) * qkv->nb[0]));
+        // heads of the fused projection read in place, the norms and the cast write fresh tensors
+        size_t               es  = ggml_element_size(qkv);
+        q                        = ggml_view_4d(ctx, qkv, D, Nh, N, M, D * es, qkv->nb[1], qkv->nb[2], 0);
+        k = ggml_view_4d(ctx, qkv, D, Nkv, N, M, D * es, qkv->nb[1], qkv->nb[2], (size_t) q_dim * es);
+        v = ggml_view_4d(ctx, qkv, D, Nkv, N, M, D * es, qkv->nb[1], qkv->nb[2], (size_t) (q_dim + kv_dim) * es);
     } else {
-        q = qwen3_linear(ctx, ly->q_proj, x);
-        k = qwen3_linear(ctx, ly->k_proj, x);
-        v = qwen3_linear(ctx, ly->v_proj, x);
+        q = ggml_reshape_4d(ctx, qwen3_linear(ctx, ly->q_proj, x), D, Nh, N, M);
+        k = ggml_reshape_4d(ctx, qwen3_linear(ctx, ly->k_proj, x), D, Nkv, N, M);
+        v = ggml_reshape_4d(ctx, qwen3_linear(ctx, ly->v_proj, x), D, Nkv, N, M);
     }
-
-    q = ggml_reshape_4d(ctx, q, D, Nh, N, M);
-    k = ggml_reshape_4d(ctx, k, D, Nkv, N, M);
-    v = ggml_reshape_4d(ctx, v, D, Nkv, N, M);
 
     q = ggml_rms_norm(ctx, q, c.rms_norm_eps);
     q = ggml_mul(ctx, q, qwen3_f32(ctx, ly->q_norm));
@@ -273,22 +270,22 @@ static struct ggml_tensor * nar_build_attn(struct ggml_context * ctx,
     q = ggml_rope_ext(ctx, q, positions, NULL, D, 2, 0, c.rope_theta, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f);
     k = ggml_rope_ext(ctx, k, positions, NULL, D, 2, 0, c.rope_theta, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f);
 
-    q = ggml_cont(ctx, ggml_permute(ctx, q, 0, 2, 1, 3));  // [D, N, Nh, M]
-    k = ggml_cont(ctx, ggml_permute(ctx, k, 0, 2, 1, 3));  // [D, N, Nkv, M]
-    v = ggml_cont(ctx, ggml_permute(ctx, v, 0, 2, 1, 3));
-
-    // Clamp V before the F16 cast: the clamp kernels walk contiguous memory
     if (clamp_fp16) {
         v = ggml_clamp(ctx, v, -65504.0f, 65504.0f);
     }
-    k = ggml_cast(ctx, k, GGML_TYPE_F16);
-    v = ggml_cast(ctx, v, GGML_TYPE_F16);
 
-    // AR prefix rows in the f16 layout of the cache, repeated per variation
-    struct ggml_tensor * k_ar =
-        ggml_cont(ctx, ggml_view_3d(ctx, cache_k, D, ar_len, Nkv, cache_k->nb[1], cache_k->nb[2], 0));
-    struct ggml_tensor * v_ar =
-        ggml_cont(ctx, ggml_view_3d(ctx, cache_v, D, ar_len, Nkv, cache_v->nb[1], cache_v->nb[2], 0));
+    // flash attention reads the permuted Q in place, the f32 path multiplies it so it needs it contiguous
+    q = ggml_permute(ctx, q, 0, 2, 1, 3);  // [D, N, Nh, M]
+    if (!use_flash_attn) {
+        q = ggml_cont(ctx, q);
+    }
+    // the F16 cast is the copy into the [D, N, Nkv, M] layout
+    k = ggml_cast(ctx, ggml_permute(ctx, k, 0, 2, 1, 3), GGML_TYPE_F16);
+    v = ggml_cast(ctx, ggml_permute(ctx, v, 0, 2, 1, 3), GGML_TYPE_F16);
+
+    // AR prefix rows of the cache, read in place by the concat, repeated per variation
+    struct ggml_tensor * k_ar = ggml_view_3d(ctx, cache_k, D, ar_len, Nkv, cache_k->nb[1], cache_k->nb[2], 0);
+    struct ggml_tensor * v_ar = ggml_view_3d(ctx, cache_v, D, ar_len, Nkv, cache_v->nb[1], cache_v->nb[2], 0);
     if (M > 1) {
         struct ggml_tensor * shape = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, D, ar_len, Nkv, M);
         k_ar                       = ggml_repeat(ctx, k_ar, shape);

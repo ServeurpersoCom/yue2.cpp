@@ -71,6 +71,40 @@ static struct ggml_tensor * qwen3_linear(struct ggml_context * ctx, struct ggml_
 // F32 manual attention (fallback when flash_attn_ext is disabled).
 // Works for 3D [D, S, X] and 4D [D, S, X, N] inputs.
 // Returns same layout as flash_attn_ext: dims 1 and 2 swapped vs input.
+// Q, K and V of x [H, cols] as [D, heads, cols]. The heads of a fused
+// projection are views: the QK-Norm writes fresh Q and K, and V is read
+// through its strides.
+static void qwen3_qkv_heads(struct ggml_context * ctx,
+                            Qwen3Layer *          ly,
+                            struct ggml_tensor *  x,
+                            int                   D,
+                            int                   Nh,
+                            int                   Nkv,
+                            int                   cols,
+                            struct ggml_tensor ** q,
+                            struct ggml_tensor ** k,
+                            struct ggml_tensor ** v) {
+    auto heads = [&](struct ggml_tensor * t, int n, int offset) {
+        size_t es = ggml_element_size(t);
+        return ggml_view_3d(ctx, t, D, n, cols, D * es, t->nb[1], (size_t) offset * es);
+    };
+    if (ly->qkv) {
+        struct ggml_tensor * qkv = qwen3_linear(ctx, ly->qkv, x);
+        *q                       = heads(qkv, Nh, 0);
+        *k                       = heads(qkv, Nkv, Nh * D);
+        *v                       = heads(qkv, Nkv, (Nh + Nkv) * D);
+    } else if (ly->qk) {
+        struct ggml_tensor * qk = qwen3_linear(ctx, ly->qk, x);
+        *q                      = heads(qk, Nh, 0);
+        *k                      = heads(qk, Nkv, Nh * D);
+        *v                      = ggml_reshape_3d(ctx, qwen3_linear(ctx, ly->v_proj, x), D, Nkv, cols);
+    } else {
+        *q = ggml_reshape_3d(ctx, qwen3_linear(ctx, ly->q_proj, x), D, Nh, cols);
+        *k = ggml_reshape_3d(ctx, qwen3_linear(ctx, ly->k_proj, x), D, Nkv, cols);
+        *v = ggml_reshape_3d(ctx, qwen3_linear(ctx, ly->v_proj, x), D, Nkv, cols);
+    }
+}
+
 static struct ggml_tensor * qwen3_attn_f32(struct ggml_context * ctx,
                                            struct ggml_tensor *  q,
                                            struct ggml_tensor *  k,

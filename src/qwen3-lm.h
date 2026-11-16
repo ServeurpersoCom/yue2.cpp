@@ -401,28 +401,7 @@ static struct ggml_tensor * qw3lm_build_attn(struct ggml_context * ctx,
 
     // QKV projections (fused, partial, or separate)
     struct ggml_tensor *q, *k, *v;
-    int                 q_dim  = Nh * D;
-    int                 kv_dim = Nkv * D;
-    if (ly->qkv) {
-        struct ggml_tensor * qkv = qwen3_linear(ctx, ly->qkv, x);
-        q                        = ggml_cont(ctx, ggml_view_2d(ctx, qkv, q_dim, S, qkv->nb[1], 0));
-        k = ggml_cont(ctx, ggml_view_2d(ctx, qkv, kv_dim, S, qkv->nb[1], (size_t) q_dim * qkv->nb[0]));
-        v = ggml_cont(ctx, ggml_view_2d(ctx, qkv, kv_dim, S, qkv->nb[1], (size_t) (q_dim + kv_dim) * qkv->nb[0]));
-    } else if (ly->qk) {
-        struct ggml_tensor * qk = qwen3_linear(ctx, ly->qk, x);
-        q                       = ggml_cont(ctx, ggml_view_2d(ctx, qk, q_dim, S, qk->nb[1], 0));
-        k = ggml_cont(ctx, ggml_view_2d(ctx, qk, kv_dim, S, qk->nb[1], (size_t) q_dim * qk->nb[0]));
-        v = qwen3_linear(ctx, ly->v_proj, x);
-    } else {
-        q = qwen3_linear(ctx, ly->q_proj, x);
-        k = qwen3_linear(ctx, ly->k_proj, x);
-        v = qwen3_linear(ctx, ly->v_proj, x);
-    }
-
-    // Reshape to heads: [X*D, S] -> [D, X, S]
-    q = ggml_reshape_3d(ctx, q, D, Nh, S);
-    k = ggml_reshape_3d(ctx, k, D, Nkv, S);
-    v = ggml_reshape_3d(ctx, v, D, Nkv, S);
+    qwen3_qkv_heads(ctx, ly, x, D, Nh, Nkv, S, &q, &k, &v);
 
     // QK-Norm
     q = ggml_rms_norm(ctx, q, c.rms_norm_eps);
@@ -438,10 +417,6 @@ static struct ggml_tensor * qw3lm_build_attn(struct ggml_context * ctx,
     q = ggml_permute(ctx, q, 0, 2, 1, 3);  // [D, S, Nh]
     k = ggml_permute(ctx, k, 0, 2, 1, 3);  // [D, S, Nkv]
     v = ggml_permute(ctx, v, 0, 2, 1, 3);  // [D, S, Nkv]
-
-    // Make contiguous for the f16 cache write
-    k = ggml_cont(ctx, k);
-    v = ggml_cont(ctx, v);
 
     // Clamp V before F16 cast: sub-Ampere tensor cores accumulate in FP16,
     // V projection can overflow to inf which corrupts all subsequent attention
@@ -729,29 +704,7 @@ static void qw3lm_forward_batch(Qwen3LM *      m,
 
             // Batched QKV projections (fused, partial, or separate)
             struct ggml_tensor *q, *k, *v;
-            int                 q_dim  = Nh * D;
-            int                 kv_dim = Nkv * D;
-            if (ly->qkv) {
-                struct ggml_tensor * qkv = qwen3_linear(ctx, ly->qkv, norm);
-                q                        = ggml_cont(ctx, ggml_view_2d(ctx, qkv, q_dim, N, qkv->nb[1], 0));
-                k = ggml_cont(ctx, ggml_view_2d(ctx, qkv, kv_dim, N, qkv->nb[1], (size_t) q_dim * qkv->nb[0]));
-                v = ggml_cont(ctx,
-                              ggml_view_2d(ctx, qkv, kv_dim, N, qkv->nb[1], (size_t) (q_dim + kv_dim) * qkv->nb[0]));
-            } else if (ly->qk) {
-                struct ggml_tensor * qk = qwen3_linear(ctx, ly->qk, norm);
-                q                       = ggml_cont(ctx, ggml_view_2d(ctx, qk, q_dim, N, qk->nb[1], 0));
-                k = ggml_cont(ctx, ggml_view_2d(ctx, qk, kv_dim, N, qk->nb[1], (size_t) q_dim * qk->nb[0]));
-                v = qwen3_linear(ctx, ly->v_proj, norm);
-            } else {
-                q = qwen3_linear(ctx, ly->q_proj, norm);
-                k = qwen3_linear(ctx, ly->k_proj, norm);
-                v = qwen3_linear(ctx, ly->v_proj, norm);
-            }
-
-            // Reshape to heads: [D, Heads, N]
-            q = ggml_reshape_3d(ctx, q, D, Nh, N);
-            k = ggml_reshape_3d(ctx, k, D, Nkv, N);
-            v = ggml_reshape_3d(ctx, v, D, Nkv, N);
+            qwen3_qkv_heads(ctx, ly, norm, D, Nh, Nkv, N, &q, &k, &v);
 
             // QK-Norm (rms_norm on dim0=D, per head per seq)
             q = ggml_rms_norm(ctx, q, c.rms_norm_eps);
@@ -762,11 +715,6 @@ static void qw3lm_forward_batch(Qwen3LM *      m,
             // RoPE: positions [N] maps to dim 2 of [D, Heads, N]
             q = ggml_rope_ext(ctx, q, positions, NULL, D, 2, 0, c.rope_theta, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f);
             k = ggml_rope_ext(ctx, k, positions, NULL, D, 2, 0, c.rope_theta, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f);
-
-            // Contiguous for clean slicing
-            q = ggml_cont(ctx, q);
-            k = ggml_cont(ctx, k);
-            v = ggml_cont(ctx, v);
 
             // Clamp V before F16 cast (sub-Ampere FP16 accumulation overflow)
             if (m->clamp_fp16) {
@@ -790,7 +738,7 @@ static void qw3lm_forward_batch(Qwen3LM *      m,
                                                        kv->v4[l]->nb[2], kv->v4[l]->nb[3], off_s0);
 
             struct ggml_tensor * k_new = ggml_reshape_4d(ctx, k, D, 1, Nkv, N);
-            struct ggml_tensor * v_new = ggml_reshape_4d(ctx, v, D, 1, Nkv, N);
+            struct ggml_tensor * v_new = ggml_view_4d(ctx, v, D, 1, Nkv, N, v->nb[1], v->nb[1], v->nb[2], 0);
 
             ggml_build_forward_expand(gf, ggml_set_rows(ctx, k_sets, k_new, kv_rows));
             ggml_build_forward_expand(gf, ggml_set_rows(ctx, v_sets, v_new, kv_rows));
