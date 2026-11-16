@@ -172,9 +172,11 @@ free guidance, grown on demand; `--max-seq` and `--max-batch` are the
 levers that trade context and batch for VRAM. Measured peak above idle
 on a 65 s song in Q8_0 under STRICT: 5.8 GB at the full context, 3.8 GB
 at `--max-seq 8192`, the compute buffers of the three graphs making the
-difference with the weights plus the cache, the VAE tiles first. A cache smaller than the
-default budgets needs a `duration` on the request, the generator refuses
-a prefix plus budget that would not fit.
+difference with the weights plus the cache, the VAE tiles first. On a cache
+smaller than the default budgets the generator shrinks a stage's budget to
+the room the prefix leaves (`[AR] Frame budget clamped to N by the KV
+cache`), the stream ends there marked truncated; it refuses only when that
+room is below the stage's `min_tokens`.
 
 The cost of STRICT is one reload of each half per song from the page
 cache, about a second on the pod, `--keep-loaded` removes it.
@@ -838,7 +840,8 @@ GET  /job?id=N                  Poll job status
 GET  /job?id=N&result=1         Fetch job result
   multipart/mixed, boundary yue2-batch-boundary: per track, song-major,
   one application/json replay request part (the request carrying the
-  semantic stream, the score and the seeds of that track), one
+  semantic stream, the score and the seeds of that track, plus
+  "truncated": true when a stage hit its budget before its end token), one
   audio/mpeg or audio/wav part and one application/octet-stream part with
   the latents the audio was decoded from (raw f32 [T, 64], the .vae
   layout); for a VAE job, application/octet-stream latents from an encode

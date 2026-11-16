@@ -452,6 +452,26 @@ static std::string json_string(const char * key, const std::string & value) {
     return out;
 }
 
+// The JSON part of a track: its replay request, and "truncated" when a stage
+// hit its budget before the end token. A resubmit ignores the extra key.
+static std::string track_json(const Yue2Request & replay, bool truncated) {
+    std::string json = request_to_json(&replay);
+    if (!truncated) {
+        return json;
+    }
+    yyjson_doc *     read = yyjson_read(json.c_str(), json.size(), 0);
+    yyjson_mut_doc * doc  = yyjson_doc_mut_copy(read, NULL);
+    yyjson_doc_free(read);
+    yyjson_mut_obj_add_bool(doc, yyjson_mut_doc_get_root(doc), "truncated", true);
+    char *      text = yyjson_mut_write(doc, 0, NULL);
+    std::string out  = text ? text : json;
+    if (text) {
+        free(text);
+    }
+    yyjson_mut_doc_free(doc);
+    return out;
+}
+
 static void handle_props(const httplib::Request &, httplib::Response & res) {
     Yue2Request d;
     request_init(&d);
@@ -686,7 +706,7 @@ static void run_job(std::shared_ptr<Job> job, Yue2Request request) {
         }
         Yue2Request replay = request_replay(request, song.score.empty() ? request.abc : song.score,
                                             pipeline_format_tokens(song.tokens), (int) t / M, (int) t % M);
-        request_parts.push_back(request_to_json(&replay));
+        request_parts.push_back(track_json(replay, song.truncated));
         latents.push_back(std::move(song.latents));
     }
 

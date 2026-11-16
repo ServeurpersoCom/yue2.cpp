@@ -198,7 +198,8 @@ jobs in FIFO order.
 **GET /job?id=N** - Poll job status. **GET /job?id=N&result=1** fetches the
 result as multipart/mixed, one pair per track: a JSON replay request part
 (the request carrying the semantic stream, the score and the seeds of the
-track) then the audio part (MP3 or WAV, selected by `output_format` in the
+track, plus `"truncated": true` when a stage hit its budget before its end
+token) then the audio part (MP3 or WAV, selected by `output_format` in the
 request). `lm_batch_size` songs times `synth_batch_size` noise variations
 come out song-major.
 **POST /job?id=N&cancel=1** cancels a running job.
