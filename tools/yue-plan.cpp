@@ -9,6 +9,7 @@
 #include "generate.h"
 #include "prompt.h"
 #include "request.h"
+#include "score-check.h"
 #include "version.h"
 
 #include <cstdio>
@@ -167,7 +168,11 @@ int main(int argc, char ** argv) {
     }
     const Yue2Generation & plan = plans[0];
 
-    std::string score = bpe_decode(&tok, plan.tokens);
+    std::string score   = bpe_decode(&tok, plan.tokens);
+    std::string problem = yue2_score_problem(score);
+    if (!problem.empty()) {
+        fprintf(stderr, "[Plan] WARNING: this score cannot be sung: %s\n", problem.c_str());
+    }
     if (!write_file(out_path, score)) {
         qw3lm_kv_free(&kv);
         qw3lm_free(&lm);

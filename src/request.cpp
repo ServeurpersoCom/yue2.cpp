@@ -32,6 +32,7 @@ void request_init(Yue2Request * r) {
     r->semantic_tokens  = "";
 
     r->abc_sampling      = YUE2_ABC_SAMPLING;
+    r->plan_retries      = 2;
     r->semantic_sampling = YUE2_SEMANTIC_SAMPLING;
 
     r->output_format = OUTPUT_FORMAT_MP3;
@@ -153,6 +154,9 @@ static void request_parse_obj(yyjson_val * obj, Yue2Request * r) {
         r->synth_batch_size = yyjson_get_int(v);
     }
     parse_sampling(obj, "abc_sampling", &r->abc_sampling);
+    if ((v = yyjson_obj_get(obj, "plan_retries")) && yyjson_is_int(v)) {
+        r->plan_retries = yyjson_get_int(v);
+    }
     parse_sampling(obj, "semantic_sampling", &r->semantic_sampling);
     if ((v = yyjson_obj_get(obj, "semantic_tokens")) && yyjson_is_str(v)) {
         r->semantic_tokens = yy_str(v);
@@ -265,6 +269,9 @@ std::string request_to_json(const Yue2Request * r, bool sparse) {
         yyjson_mut_obj_add_int(doc, root, "synth_batch_size", r->synth_batch_size);
     }
     add_sampling(doc, root, "abc_sampling", r->abc_sampling, d.abc_sampling, sparse);
+    if (!sparse || r->plan_retries != d.plan_retries) {
+        yyjson_mut_obj_add_int(doc, root, "plan_retries", r->plan_retries);
+    }
     add_sampling(doc, root, "semantic_sampling", r->semantic_sampling, d.semantic_sampling, sparse);
     if (!sparse || r->semantic_tokens != d.semantic_tokens) {
         yyjson_mut_obj_add_strncpy(doc, root, "semantic_tokens", r->semantic_tokens.c_str(), r->semantic_tokens.size());
