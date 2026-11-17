@@ -803,6 +803,8 @@ int main(int argc, char ** argv) {
 
     httplib::Server svr;
     g_svr = &svr;
+    // a recording comes whole in one request body: an hour of 32-bit stereo at 48 kHz is 1.4 GB
+    svr.set_payload_max_length((size_t) 2 * 1024 * 1024 * 1024);
 
     // SO_REUSEADDR lets us rebind a port still in TIME_WAIT after a restart.
     // SO_REUSEPORT is deliberately not set: a second instance on the same port
