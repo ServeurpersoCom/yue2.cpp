@@ -200,7 +200,9 @@ result as multipart/mixed, one pair per track: a JSON replay request part
 (the request carrying the semantic stream, the score and the seeds of the
 track) then the audio part (MP3 or WAV, selected by `output_format` in the
 request). `lm_batch_size` songs times `synth_batch_size` noise variations
-come out song-major.
+come out song-major. Each song is decoded as soon as its latents stand:
+while the job runs, the status names `tracks_ready`, and
+**GET /job?id=N&result=1&track=K** fetches track K alone in the same form.
 **POST /job?id=N&cancel=1** cancels a running job.
 
 **GET /health** - Returns `{"status":"ok"}`.

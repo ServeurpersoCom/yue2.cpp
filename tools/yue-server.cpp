@@ -170,12 +170,26 @@ enum class JobStatus : int {
     CANCELLED = 3,
 };
 
+// What a finished track is sent as: its replay request, its encoded audio and its latents
+struct JobTrack {
+    std::string        request;
+    std::string        audio;
+    std::vector<float> latents;
+};
+
 struct Job {
     std::string            id;
     std::atomic<JobStatus> status{ JobStatus::RUNNING };
     std::string            result_body;
     std::string            result_mime;
     std::atomic<bool>      cancel{ false };
+
+    // The tracks finished so far, in order, while the job still runs: GET /job names how many there are and
+    // &track=N fetches one. Guarded by mtx_tracks.
+    std::mutex            mtx_tracks;
+    std::vector<JobTrack> tracks;
+    const char *          tracks_mime   = "audio/wav";
+    bool                  tracks_failed = false;
 
     // memory ordering contract: result_body and result_mime are written
     // before status is stored (seq_cst). the client loads status (seq_cst)
@@ -652,48 +666,75 @@ static void run_vae_decode(std::shared_ptr<Job> job, Yue2Request request, std::v
     job->status.store(JobStatus::DONE);
 }
 
+// What the pipeline's track_ready callback needs to turn a finished track into the parts the job sends
+struct JobTracksSink {
+    Job *               job;
+    const Yue2Request * request;
+};
+
+// One part triple per track, song-major. The replay request of a track
+// carries its semantic stream, its score and the seeds it consumed, so a
+// resubmit reproduces it without the autoregression.
+static void job_track_ready(void * data, size_t t, Yue2Song & song) {
+    auto *              sink    = (JobTracksSink *) data;
+    const Yue2Request & request = *sink->request;
+    const int           M       = request.synth_batch_size;
+    JobTrack            track;
+    track.audio        = encode_audio(request, song.audio, song.T_audio);
+    Yue2Request replay = request_replay(request, song.score.empty() ? request.abc : song.score,
+                                        pipeline_format_tokens(song.tokens), (int) t / M, (int) t % M);
+    track.request      = request_to_json(&replay);
+    track.latents      = std::move(song.latents);
+    std::lock_guard<std::mutex> lock(sink->job->mtx_tracks);
+    if (track.audio.empty()) {
+        sink->job->tracks_failed = true;
+        return;
+    }
+    sink->job->tracks.push_back(std::move(track));
+    fprintf(stderr, "[Server] Job %s: track %zu ready\n", sink->job->id.c_str(), t + 1);
+}
+
 static void run_job(std::shared_ptr<Job> job, Yue2Request request) {
     active_job_set(job);
     fprintf(stderr, "[Server] Job %s: %s\n", job->id.c_str(), request_to_json(&request).c_str());
 
-    std::vector<Yue2Song> songs;
-    bool ok = pipeline_generate(&g_pipeline, request, &songs, server_cancel_job, (void *) &job->cancel);
+    bool      is_mp3  = false;
+    WavFormat wav_fmt = WAV_S16;
+    audio_parse_format(request.output_format.c_str(), is_mp3, wav_fmt);
+    job->tracks_mime = is_mp3 ? "audio/mpeg" : "audio/wav";
 
+    std::vector<Yue2Song> songs;
+    JobTracksSink         sink = { job.get(), &request };
+    bool ok = pipeline_generate(&g_pipeline, request, &songs, server_cancel_job, (void *) &job->cancel, job_track_ready,
+                                &sink);
+
+    active_job_set(nullptr);
     if (!ok) {
-        active_job_set(nullptr);
         job->status.store(job->cancel.load() ? JobStatus::CANCELLED : JobStatus::FAILED);
         return;
     }
 
-    bool      is_mp3  = false;
-    WavFormat wav_fmt = WAV_S16;
-    audio_parse_format(request.output_format.c_str(), is_mp3, wav_fmt);
-
-    // One part triple per track, song-major. The replay request of a track
-    // carries its semantic stream, its score and the seeds it consumed, so a
-    // resubmit reproduces it without the autoregression.
-    const int                       M = request.synth_batch_size;
     std::vector<std::string>        audio_parts;
     std::vector<std::string>        request_parts;
     std::vector<std::vector<float>> latents;
-    for (size_t t = 0; t < songs.size(); t++) {
-        Yue2Song & song = songs[t];
-        audio_parts.push_back(encode_audio(request, song.audio, song.T_audio));
-        if (audio_parts.back().empty()) {
-            active_job_set(nullptr);
+    {
+        std::lock_guard<std::mutex> lock(job->mtx_tracks);
+        if (job->tracks_failed || job->tracks.size() != songs.size()) {
             job->status.store(JobStatus::FAILED);
             return;
         }
-        Yue2Request replay = request_replay(request, song.score.empty() ? request.abc : song.score,
-                                            pipeline_format_tokens(song.tokens), (int) t / M, (int) t % M);
-        request_parts.push_back(request_to_json(&replay));
-        latents.push_back(std::move(song.latents));
+        for (const JobTrack & track : job->tracks) {
+            audio_parts.push_back(track.audio);
+            request_parts.push_back(track.request);
+            latents.push_back(track.latents);
+        }
     }
-
-    active_job_set(nullptr);
-    job->result_body = multipart_build_tracks(request_parts, audio_parts, is_mp3 ? "audio/mpeg" : "audio/wav", latents);
+    job->result_body = multipart_build_tracks(request_parts, audio_parts, job->tracks_mime, latents);
     job->result_mime = MULTIPART_MIME;
     job->status.store(JobStatus::DONE);
+    // the whole result holds every track now: the single ones are not kept twice
+    std::lock_guard<std::mutex> lock(job->mtx_tracks);
+    job->tracks.clear();
 }
 
 static void print_usage(const char * prog) {
@@ -956,7 +997,28 @@ int main(int argc, char ** argv) {
         }
         JobStatus status = job->status.load();
         if (!req.has_param("result")) {
-            res.set_content(json_string("status", job_status_str(status)), "application/json");
+            size_t ready = 0;
+            {
+                std::lock_guard<std::mutex> lock(job->mtx_tracks);
+                ready = job->tracks.size();
+            }
+            char body[96];
+            snprintf(body, sizeof(body), "{\"status\":\"%s\",\"tracks_ready\":%zu}", job_status_str(status), ready);
+            res.set_content(body, "application/json");
+            return;
+        }
+        // one finished track of a job still running: the same multipart as the whole result, with that track alone
+        if (req.has_param("track")) {
+            const size_t                index = (size_t) strtoull(req.get_param_value("track").c_str(), nullptr, 10);
+            std::lock_guard<std::mutex> lock(job->mtx_tracks);
+            if (index >= job->tracks.size()) {
+                res.status = 404;
+                res.set_content(json_string("error", "track not ready"), "application/json");
+                return;
+            }
+            const JobTrack & track = job->tracks[index];
+            res.set_content(multipart_build_tracks({ track.request }, { track.audio }, job->tracks_mime, { track.latents }),
+                            MULTIPART_MIME.c_str());
             return;
         }
         if (status != JobStatus::DONE) {

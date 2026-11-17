@@ -416,11 +416,15 @@ static bool pipeline_continue_codes(Yue2Pipeline *           p,
 // of a song solve in one NAR graph over the set the AR left complete. With
 // source_tokens, the song opens on the section of the source the request
 // names and the AR writes on from it.
+// `track_ready` is told of each track as soon as its audio stands, song by song, while the songs after it are still
+// being made; it may take the track's audio and latents for itself.
 static bool pipeline_generate(Yue2Pipeline *          p,
                               const Yue2Request &     r,
                               std::vector<Yue2Song> * songs,
                               bool (*cancelled)(void *) = nullptr,
-                              void * cancel_data        = nullptr) {
+                              void * cancel_data        = nullptr,
+                              void (*track_ready)(void *, size_t, Yue2Song &) = nullptr,
+                              void * track_data                               = nullptr) {
     Timer   total_timer;
     Yue2Cot cot;
     if (!yue2_cot_parse(r.cot, &cot)) {
@@ -614,6 +618,7 @@ static bool pipeline_generate(Yue2Pipeline *          p,
     if (!qw3lm_kv_sets(&p->kv, 1)) {
         return false;
     }
+    float seconds = 0.0f;
     for (int i = 0; i < B; i++) {
         const int prefix_len = (int) prefixes[i].size();
         const int chunk_size = chunk_sizes[i];
@@ -681,36 +686,40 @@ static bool pipeline_generate(Yue2Pipeline *          p,
             fprintf(stderr, "[NAR] Song %d chunk %d/%d: %d frames, cache %d rows, %d forwarded, %.1f s\n", i,
                     start / chunk_size + 1, chunks, frames, ar_len, ar_len - kept, chunk_timer.ms() / 1000.0);
         }
-    }
 
-    nar_hold.reset();
-    VAEGGML * vae = require_vae(p);
-    if (!vae) {
-        return false;
-    }
-    ModelHandle vae_hold(p->store, vae);
-    for (size_t t = 0; t < songs->size(); t++) {
-        Yue2Song & song = (*songs)[t];
-        fprintf(stderr, "[VAE] Track %zu/%zu: song %zu variation %zu\n", t + 1, songs->size(), t / M, t % M);
-        if (!pipeline_decode(p, vae, song.latents.data(), song.T_lat, &song.audio, &song.T_audio, cancelled,
-                             cancel_data)) {
+        // A song is decoded as soon as its latents stand, so the first of several is heard while the rest are made.
+        // The NAR lets go first: where the store keeps one group on the card, the VAE takes its place.
+        nar_hold.reset();
+        nar           = nullptr;
+        VAEGGML * vae = require_vae(p);
+        if (!vae) {
             return false;
         }
-        if (t == 0 && p->dumper.enabled) {
-            // Interleaved [T_audio, 2] like the torch reference dump
-            std::vector<float> interleaved((size_t) 2 * song.T_audio);
-            for (int k = 0; k < song.T_audio; k++) {
-                interleaved[(size_t) 2 * k]     = song.audio[(size_t) k];
-                interleaved[(size_t) 2 * k + 1] = song.audio[(size_t) song.T_audio + k];
+        ModelHandle vae_hold(p->store, vae);
+        for (int j = 0; j < M; j++) {
+            const size_t t    = (size_t) i * M + j;
+            Yue2Song &   song = (*songs)[t];
+            fprintf(stderr, "[VAE] Track %zu/%zu: song %d variation %d\n", t + 1, songs->size(), i, j);
+            if (!pipeline_decode(p, vae, song.latents.data(), song.T_lat, &song.audio, &song.T_audio, cancelled,
+                                 cancel_data)) {
+                return false;
             }
-            debug_dump_2d(&p->dumper, "vae_audio", interleaved.data(), song.T_audio, 2);
+            if (t == 0 && p->dumper.enabled) {
+                // Interleaved [T_audio, 2] like the torch reference dump
+                std::vector<float> interleaved((size_t) 2 * song.T_audio);
+                for (int k = 0; k < song.T_audio; k++) {
+                    interleaved[(size_t) 2 * k]     = song.audio[(size_t) k];
+                    interleaved[(size_t) 2 * k + 1] = song.audio[(size_t) song.T_audio + k];
+                }
+                debug_dump_2d(&p->dumper, "vae_audio", interleaved.data(), song.T_audio, 2);
+            }
+            seconds += (float) song.T_audio / (float) YUE2_SAMPLE_RATE;
+            if (track_ready) {
+                track_ready(track_data, t, song);
+            }
         }
     }
 
-    float seconds = 0.0f;
-    for (size_t t = 0; t < songs->size(); t++) {
-        seconds += (float) (*songs)[t].T_audio / (float) YUE2_SAMPLE_RATE;
-    }
     fprintf(stderr, "[Pipeline] Done: %zu tracks, %.1f s of audio in %.1f s (%.1fx realtime)\n", songs->size(), seconds,
             total_timer.ms() / 1000.0, seconds / (float) (total_timer.ms() / 1000.0));
     return true;

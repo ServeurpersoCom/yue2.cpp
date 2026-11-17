@@ -833,7 +833,13 @@ POST /vae                       Submit a VAE job, returns job ID
   latents that are not whole frames within the context
 
 GET  /job?id=N                  Poll job status
-  response: {"status":"running|done|failed|cancelled"}
+  response: {"status":"running|done|failed|cancelled","tracks_ready":K}
+  tracks_ready: the tracks of a synth job decoded so far, song-major
+
+GET  /job?id=N&result=1&track=K Fetch track K of a job still running
+  the multipart of the whole result with that track alone
+  404 while track K is not ready, and once the job is done (the whole
+  result holds every track then)
 
 GET  /job?id=N&result=1         Fetch job result
   multipart/mixed, boundary yue2-batch-boundary: per track, song-major,
