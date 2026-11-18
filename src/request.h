@@ -53,6 +53,9 @@ struct Yue2Request {
 
     // sampling of each autoregressive stage, the checkpoint presets by default
     Yue2Sampling abc_sampling;
+    // a planned score nothing can be sung from (score-check.h) is planned
+    // again, song i's attempt k drawing with lm_seed + i + k * lm_batch_size
+    int plan_retries;  // 2, at most 8
     Yue2Sampling semantic_sampling;
 
     // semantic stream (CSV of codec values, 25 per second). Non empty replaces
